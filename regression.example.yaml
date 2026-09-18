@@ -1,0 +1,25 @@
+# slam-regression-ci example configuration.
+# Copy to regression.yaml and adjust; every key shown here is optional.
+
+metrics:
+  # Maximum allowed relative increase over the recorded baseline, in percent.
+  # A candidate passes when (candidate - baseline) / baseline <= threshold.
+  # Negative changes (improvements) always pass. Use 0 to reject any increase.
+  ate_rmse:
+    max_relative_regression_percent: 10
+
+  rpe_translation_rmse:
+    max_relative_regression_percent: 10
+
+association:
+  # Poses whose timestamps differ by more than this (seconds) are not paired.
+  max_timestamp_diff: 0.01
+
+alignment:
+  # Align the estimate to the reference with Umeyama's method before scoring.
+  # correct_scale additionally estimates a uniform scale (monocular use case).
+  enabled: true
+  correct_scale: false
+
+# Frame gap used for the relative pose error (1 = consecutive poses).
+rpe_delta: 1
