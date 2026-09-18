@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and usage help
+    url: https://github.com/pyy52/slam-regression-ci/issues/new
+    about: >
+      Open a regular issue with the "question" title prefix if you are unsure
+      whether your problem is a bug.

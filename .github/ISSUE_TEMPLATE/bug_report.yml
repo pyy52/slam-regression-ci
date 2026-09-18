@@ -1,0 +1,44 @@
+name: Bug report
+description: Report something that behaves incorrectly or unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Thanks for taking the time to file a bug. Please include the command
+        you ran and the exact output (redact any private paths).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: slam-regression version
+      description: Output of `slam-regression --version`
+    validations:
+      required: true
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.8.10"
+    validations:
+      required: true
+  - type: textarea
+    id: input-files
+    attributes:
+      label: Minimal input files
+      description: >
+        The smallest trajectory/config files that reproduce the issue
+        (a few lines each is usually enough).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues before opening this one
+          required: true
