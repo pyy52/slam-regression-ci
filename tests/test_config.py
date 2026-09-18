@@ -36,7 +36,10 @@ class TestParsing:
     def test_full_config_round_trip(self):
         config = config_from_dict(
             {
-                "metrics": {"ate_rmse": {"max_relative_regression_percent": 1}, "rpe_translation_rmse": {"max_relative_regression_percent": 2}},
+                "metrics": {
+                    "ate_rmse": {"max_relative_regression_percent": 1},
+                    "rpe_translation_rmse": {"max_relative_regression_percent": 2},
+                },
                 "association": {"max_timestamp_diff": 0.05},
                 "alignment": {"enabled": False, "correct_scale": True},
                 "rpe_delta": 3,

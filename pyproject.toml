@@ -62,14 +62,13 @@ testpaths = ["tests"]
 addopts = "-q"
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py38"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = [
-    "UP006",  # keep typing.Dict/List usable on Python 3.8
-    "UP007",  # keep Optional[...] usable on Python 3.8
-    "UP035",
+    "UP006",  # keep typing.Dict/List annotations usable on Python 3.8
+    "UP045",  # keep Optional[...] annotations usable on Python 3.8
 ]

@@ -64,25 +64,23 @@ def _compute_for_estimate(config: Config, reference_path: str, estimate_path: st
 
 def _load_baseline(path: str) -> dict:
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             baseline = json.load(handle)
     except OSError as exc:
-        raise ConfigError("cannot read baseline file '{}': {}".format(path, exc.strerror or exc)) from None
+        raise ConfigError(f"cannot read baseline file '{path}': {exc.strerror or exc}") from None
     except json.JSONDecodeError as exc:
-        raise ConfigError("baseline file '{}' is not valid JSON: {}".format(path, exc)) from None
+        raise ConfigError(f"baseline file '{path}' is not valid JSON: {exc}") from None
     if not isinstance(baseline, dict) or baseline.get("schema") != BASELINE_SCHEMA:
         raise ConfigError(
-            "'{}' is not a {} baseline file; generate one with 'slam-regression record'".format(
-                path, BASELINE_SCHEMA
-            )
+            f"'{path}' is not a {BASELINE_SCHEMA} baseline file; generate one with 'slam-regression record'"
         )
     metrics = baseline.get("metrics")
     if not isinstance(metrics, dict) or not metrics:
-        raise ConfigError("baseline file '{}' contains no metrics".format(path))
+        raise ConfigError(f"baseline file '{path}' contains no metrics")
     for key in ("ate_rmse", "rpe_translation_rmse"):
         value = metrics.get(key)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-            raise ConfigError("baseline file '{}' has invalid metric '{}'".format(path, key))
+            raise ConfigError(f"baseline file '{path}' has invalid metric '{key}'")
     return baseline
 
 
@@ -95,23 +93,23 @@ def _write_json(path: str, payload: dict) -> None:
 def _format_change(change: Optional[float]) -> str:
     if change is None:
         return "n/a"
-    return "{:+.2f}%".format(change)
+    return f"{change:+.2f}%"
 
 
 def _print_comparisons(result: ComparisonResult) -> None:
     for comparison in result.comparisons:
         label = METRIC_LABELS.get(comparison.metric, comparison.metric)
-        print("{}:".format(label))
-        print("  baseline:  {:.6f} m".format(comparison.baseline))
-        print("  candidate: {:.6f} m".format(comparison.candidate))
-        print("  change: {}".format(_format_change(comparison.change_percent)))
+        print(f"{label}:")
+        print(f"  baseline:  {comparison.baseline:.6f} m")
+        print(f"  candidate: {comparison.candidate:.6f} m")
+        print(f"  change: {_format_change(comparison.change_percent)}")
         if comparison.threshold_percent is not None:
-            print("  threshold: {:+.2f}%".format(comparison.threshold_percent))
+            print(f"  threshold: {comparison.threshold_percent:+.2f}%")
         if comparison.note:
-            print("  note: {}".format(comparison.note))
+            print(f"  note: {comparison.note}")
     print("STATUS: {}".format("PASS" if result.passed else "FAIL"))
     for warning in result.warnings:
-        print("warning: {}".format(warning), file=sys.stderr)
+        print(f"warning: {warning}", file=sys.stderr)
 
 
 def _command_record(args: argparse.Namespace) -> int:
@@ -239,5 +237,5 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         return args.func(args)
     except SlamRegressionError as exc:
-        print("error: {}".format(exc), file=sys.stderr)
+        print(f"error: {exc}", file=sys.stderr)
         return 2

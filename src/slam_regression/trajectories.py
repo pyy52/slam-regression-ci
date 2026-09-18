@@ -36,11 +36,11 @@ class Trajectory:
             raise TrajectoryError("timestamps must be a 1-D array")
         if self.positions.shape != (n, 3):
             raise TrajectoryError(
-                "positions must have shape ({}, 3), got {}".format(n, self.positions.shape)
+                f"positions must have shape ({n}, 3), got {self.positions.shape}"
             )
         if self.rotations.shape != (n, 4):
             raise TrajectoryError(
-                "rotations must have shape ({}, 4), got {}".format(n, self.rotations.shape)
+                f"rotations must have shape ({n}, 4), got {self.rotations.shape}"
             )
         if not np.all(np.isfinite(self.timestamps)):
             raise TrajectoryError("timestamps contain non-finite values")
@@ -58,9 +58,9 @@ def load_tum(path: str) -> Trajectory:
     """Load a TUM-format trajectory file, sorted by ascending timestamp."""
     rows: List[List[float]] = []
     try:
-        handle = open(path, "r", encoding="utf-8")
+        handle = open(path, encoding="utf-8")
     except OSError as exc:
-        raise TrajectoryError("cannot read trajectory file '{}': {}".format(path, exc.strerror or exc)) from None
+        raise TrajectoryError(f"cannot read trajectory file '{path}': {exc.strerror or exc}") from None
 
     with handle:
         for line_no, raw_line in enumerate(handle, start=1):
@@ -70,23 +70,21 @@ def load_tum(path: str) -> Trajectory:
             tokens = line.split()
             if len(tokens) != TUM_COLUMNS:
                 raise TrajectoryError(
-                    "{}:{}: expected {} whitespace-separated values, got {}: {!r}".format(
-                        path, line_no, TUM_COLUMNS, len(tokens), line
-                    )
+                    f"{path}:{line_no}: expected {TUM_COLUMNS} whitespace-separated values, got {len(tokens)}: {line!r}"
                 )
             try:
                 rows.append([float(token) for token in tokens])
             except ValueError:
                 raise TrajectoryError(
-                    "{}:{}: could not parse numeric value in {!r}".format(path, line_no, line)
+                    f"{path}:{line_no}: could not parse numeric value in {line!r}"
                 ) from None
 
     if not rows:
-        raise TrajectoryError("{}: file contains no poses".format(path))
+        raise TrajectoryError(f"{path}: file contains no poses")
 
     data = np.asarray(rows, dtype=np.float64)
     if not np.all(np.isfinite(data)):
-        raise TrajectoryError("{}: file contains NaN or infinite values".format(path))
+        raise TrajectoryError(f"{path}: file contains NaN or infinite values")
 
     order = np.argsort(data[:, 0], kind="stable")
     data = data[order]
@@ -94,7 +92,7 @@ def load_tum(path: str) -> Trajectory:
     quaternions = data[:, 4:8]
     norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
     if np.any(norms < _QUAT_NORM_TOLERANCE):
-        raise TrajectoryError("{}: near-zero quaternion found; rotation is undefined".format(path))
+        raise TrajectoryError(f"{path}: near-zero quaternion found; rotation is undefined")
     quaternions = quaternions / norms
 
     return Trajectory(
@@ -109,9 +107,8 @@ def save_tum(path: str, trajectory: Trajectory) -> None:
     lines = []
     for t, pos, quat in zip(trajectory.timestamps, trajectory.positions, trajectory.rotations):
         lines.append(
-            "{:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f} {:.9f}".format(
-                float(t), pos[0], pos[1], pos[2], quat[0], quat[1], quat[2], quat[3]
-            )
+            f"{float(t):.9f} {pos[0]:.9f} {pos[1]:.9f} {pos[2]:.9f} "
+            f"{quat[0]:.9f} {quat[1]:.9f} {quat[2]:.9f} {quat[3]:.9f}"
         )
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(lines) + "\n")
@@ -128,7 +125,7 @@ def associate(
     of matched pairs.
     """
     if max_diff < 0:
-        raise TrajectoryError("max_diff must be non-negative, got {}".format(max_diff))
+        raise TrajectoryError(f"max_diff must be non-negative, got {max_diff}")
 
     ref_idx: List[int] = []
     est_idx: List[int] = []
