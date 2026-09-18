@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slam-regression-ci"
+version = "0.1.0"
+description = "Lightweight CI regression gate for SLAM & odometry trajectories: ATE/RPE thresholds with Markdown + JSON reports"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "PeiYuanyang (pyy52)" }]
+keywords = [
+    "slam",
+    "odometry",
+    "trajectory",
+    "ate",
+    "rpe",
+    "regression",
+    "ci",
+    "robotics",
+    "lidar",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Robotics",
+]
+dependencies = [
+    "numpy>=1.17",
+    "PyYAML>=5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+slam-regression = "slam_regression.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/pyy52/slam-regression-ci"
+Issues = "https://github.com/pyy52/slam-regression-ci/issues"
+Changelog = "https://github.com/pyy52/slam-regression-ci/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "UP006",  # keep typing.Dict/List usable on Python 3.8
+    "UP007",  # keep Optional[...] usable on Python 3.8
+    "UP035",
+]
