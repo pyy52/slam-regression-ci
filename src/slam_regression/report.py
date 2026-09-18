@@ -43,13 +43,13 @@ class ReportContext:
 def _format_change(change: Optional[float]) -> str:
     if change is None:
         return "n/a"
-    return "{:+.2f}%".format(change)
+    return f"{change:+.2f}%"
 
 
 def _format_threshold(threshold: Optional[float]) -> str:
     if threshold is None:
         return "-"
-    return "{:+.2f}%".format(threshold)
+    return f"{threshold:+.2f}%"
 
 
 def _format_alignment(settings: Dict[str, object]) -> str:
@@ -67,10 +67,10 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
     lines: List[str] = []
     lines.append("# SLAM regression report")
     lines.append("")
-    lines.append("**Verdict: {}**".format(verdict))
+    lines.append(f"**Verdict: {verdict}**")
     lines.append("")
     lines.append(
-        "Generated {} by slam-regression {}".format(context.created_utc, context.tool_version)
+        f"Generated {context.created_utc} by slam-regression {context.tool_version}"
     )
     lines.append("")
     lines.append("## Metric comparison")
@@ -92,11 +92,11 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
     lines.append("")
     lines.append("## Run details")
     lines.append("")
-    lines.append("- baseline file: `{}`".format(context.baseline_file))
+    lines.append(f"- baseline file: `{context.baseline_file}`")
     lines.append("- reference: `{}`".format(context.inputs.get("reference", "n/a")))
     lines.append("- estimate: `{}`".format(context.inputs.get("estimate", "n/a")))
-    lines.append("- matched pose pairs: {}".format(context.candidate_num_pairs))
-    lines.append("- alignment: {}".format(_format_alignment(context.settings)))
+    lines.append(f"- matched pose pairs: {context.candidate_num_pairs}")
+    lines.append(f"- alignment: {_format_alignment(context.settings)}")
     lines.append("- association max timestamp diff: {} s".format(
         context.settings.get("association", {}).get("max_timestamp_diff", "n/a")
         if isinstance(context.settings.get("association", {}), dict)
@@ -106,14 +106,14 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
     notes: List[str] = []
     for comparison in result.comparisons:
         if comparison.note:
-            notes.append("**{}**: {}".format(METRIC_LABELS.get(comparison.metric, comparison.metric), comparison.note))
+            notes.append(f"**{METRIC_LABELS.get(comparison.metric, comparison.metric)}**: {comparison.note}")
     notes.extend(context.warnings)
     if notes:
         lines.append("")
         lines.append("## Notes")
         lines.append("")
         for note in notes:
-            lines.append("- {}".format(note))
+            lines.append(f"- {note}")
 
     lines.append("")
     return "\n".join(lines)

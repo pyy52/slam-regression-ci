@@ -60,9 +60,7 @@ def compare_metric(
     """Compare one metric against the baseline under a relative threshold."""
     if baseline < 0.0 or candidate < 0.0:
         raise MetricsError(
-            "metric values must be non-negative ({}: baseline={}, candidate={})".format(
-                metric, baseline, candidate
-            )
+            f"metric values must be non-negative ({metric}: baseline={baseline}, candidate={candidate})"
         )
 
     if threshold_percent is None:
@@ -110,14 +108,19 @@ def compare_metric(
     )
 
 
-def evaluate(baseline_metrics: dict, candidate_metrics: dict, metric_names: List[str], thresholds: dict) -> ComparisonResult:
+def evaluate(
+    baseline_metrics: dict,
+    candidate_metrics: dict,
+    metric_names: List[str],
+    thresholds: dict,
+) -> ComparisonResult:
     """Evaluate all configured metrics and combine into an overall verdict."""
     comparisons: List[MetricComparison] = []
     for name in metric_names:
         if name not in baseline_metrics:
-            raise MetricsError("baseline is missing metric '{}'".format(name))
+            raise MetricsError(f"baseline is missing metric '{name}'")
         if name not in candidate_metrics:
-            raise MetricsError("candidate is missing metric '{}'".format(name))
+            raise MetricsError(f"candidate is missing metric '{name}'")
         threshold = thresholds.get(name)
         comparisons.append(
             compare_metric(name, baseline_metrics[name], candidate_metrics[name], threshold)

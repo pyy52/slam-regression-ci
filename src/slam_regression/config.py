@@ -78,16 +78,16 @@ def _is_number(value: Any) -> bool:
 
 def _as_non_negative_number(value: Any, what: str) -> float:
     if not _is_number(value):
-        raise ConfigError("{} must be a number, got {!r}".format(what, value))
+        raise ConfigError(f"{what} must be a number, got {value!r}")
     number = float(value)
     if number < 0.0:
-        raise ConfigError("{} must be >= 0, got {}".format(what, value))
+        raise ConfigError(f"{what} must be >= 0, got {value}")
     return number
 
 
 def _as_bool(value: Any, what: str) -> bool:
     if not isinstance(value, bool):
-        raise ConfigError("{} must be a boolean, got {!r}".format(what, value))
+        raise ConfigError(f"{what} must be a boolean, got {value!r}")
     return value
 
 
@@ -110,7 +110,7 @@ def _parse_metrics(raw: Any) -> Dict[str, MetricThreshold]:
             continue
         if not isinstance(rule, dict):
             raise ConfigError(
-                "metric '{}' must be a mapping with key '{}'".format(name, METRIC_RULE_KEY)
+                f"metric '{name}' must be a mapping with key '{METRIC_RULE_KEY}'"
             )
         unknown = [key for key in rule if key != METRIC_RULE_KEY]
         if unknown:
@@ -123,7 +123,7 @@ def _parse_metrics(raw: Any) -> Dict[str, MetricThreshold]:
         threshold = None
         if threshold_value is not None:
             threshold = _as_non_negative_number(
-                threshold_value, "metrics.{}.{}".format(name, METRIC_RULE_KEY)
+                threshold_value, f"metrics.{name}.{METRIC_RULE_KEY}"
             )
         metrics[name] = MetricThreshold(threshold)
     return metrics
@@ -187,7 +187,7 @@ def config_from_dict(raw: Optional[dict]) -> Config:
 
     rpe_delta_raw = raw.get("rpe_delta", 1)
     if not isinstance(rpe_delta_raw, int) or isinstance(rpe_delta_raw, bool) or rpe_delta_raw < 1:
-        raise ConfigError("'rpe_delta' must be an integer >= 1, got {!r}".format(rpe_delta_raw))
+        raise ConfigError(f"'rpe_delta' must be an integer >= 1, got {rpe_delta_raw!r}")
 
     return Config(
         metrics=metrics,
@@ -202,12 +202,12 @@ def load_config(path: Optional[str]) -> Config:
     if path is None:
         return default_config()
     try:
-        handle = open(path, "r", encoding="utf-8")
+        handle = open(path, encoding="utf-8")
     except OSError as exc:
-        raise ConfigError("cannot read config file '{}': {}".format(path, exc.strerror or exc)) from None
+        raise ConfigError(f"cannot read config file '{path}': {exc.strerror or exc}") from None
     with handle:
         try:
             raw = yaml.safe_load(handle)
         except yaml.YAMLError as exc:
-            raise ConfigError("invalid YAML in '{}': {}".format(path, exc)) from None
+            raise ConfigError(f"invalid YAML in '{path}': {exc}") from None
     return config_from_dict(raw)

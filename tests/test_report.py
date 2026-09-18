@@ -1,11 +1,8 @@
 import json
 
-import pytest
-
 from slam_regression.cli import main
 from slam_regression.policy import ComparisonResult, compare_metric
 from slam_regression.report import ReportContext, render_markdown
-
 from test_cli import fixed_noise, line_positions, write_tum
 
 
@@ -118,10 +115,15 @@ class TestCliReportIntegration:
             tmp_path / "degraded.tum", line_positions(n, 0.1, fixed_noise(n, 0.06, seed=8))
         )
         baseline_json = str(tmp_path / "baseline.json")
-        assert main(["record", "--reference", reference, "--estimate", baseline_est, "--json", baseline_json]) == 0
+        assert main(
+            ["record", "--reference", reference, "--estimate", baseline_est, "--json", baseline_json]
+        ) == 0
         report_md = str(tmp_path / "report.md")
         code = main(
-            ["compare", "--baseline", baseline_json, "--reference", reference, "--estimate", degraded, "--report", report_md]
+            [
+                "compare", "--baseline", baseline_json, "--reference", reference,
+                "--estimate", degraded, "--report", report_md,
+            ]
         )
         assert code == 1
         assert "**Verdict: FAIL**" in open(report_md).read()

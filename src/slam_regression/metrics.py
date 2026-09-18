@@ -113,7 +113,7 @@ def umeyama_alignment(
     if src.shape != dst.shape or src.ndim != 2 or src.shape[1] != 3:
         raise MetricsError("src and dst must both have shape (N, 3)")
     if src.shape[0] < 3:
-        raise MetricsError("alignment requires at least 3 matched poses, got {}".format(src.shape[0]))
+        raise MetricsError(f"alignment requires at least 3 matched poses, got {src.shape[0]}")
 
     mu_src = src.mean(axis=0)
     mu_dst = dst.mean(axis=0)
@@ -168,12 +168,12 @@ def compute_metrics(
     if not (ref_positions.shape == est_positions.shape and ref_positions.ndim == 2):
         raise MetricsError("reference and estimate positions must both have shape (N, 3)")
     if rpe_delta < 1:
-        raise MetricsError("rpe_delta must be >= 1, got {}".format(rpe_delta))
+        raise MetricsError(f"rpe_delta must be >= 1, got {rpe_delta}")
 
     n = ref_positions.shape[0]
     if n < rpe_delta + 1:
         raise MetricsError(
-            "RPE with delta={} needs at least {} matched poses, got {}".format(rpe_delta, rpe_delta + 1, n)
+            f"RPE with delta={rpe_delta} needs at least {rpe_delta + 1} matched poses, got {n}"
         )
 
     scale = None
@@ -195,12 +195,15 @@ def compute_metrics(
     ate_rmse, ate_mean, ate_max = _rmse_stats(ate_errors)
 
     ref_transforms = poses_to_transforms(ref_positions, ref_quaternions)
-    rpe_errors = np.empty(n - rpe_delta, dtype=np.float64)
-    for i in range(rpe_delta, n):
-        est_rel = est_transforms[i] @ invert_rigid(est_transforms[i - rpe_delta : i])[0]
-        ref_rel = ref_transforms[i] @ invert_rigid(ref_transforms[i - rpe_delta : i])[0]
-        err = invert_rigid(ref_rel[None, :, :])[0] @ est_rel
-        rpe_errors[i - rpe_delta] = np.linalg.norm(err[:3, 3])
+    ref_inverse = invert_rigid(ref_transforms)
+    est_inverse = invert_rigid(est_transforms)
+    # TUM/evo convention: relative motion from pose j to pose j+delta expressed
+    # in the start frame, error E = (ref_rel)^-1 * est_rel, translation norm.
+    m = n - rpe_delta
+    ref_rel = np.einsum("nij,njk->nik", ref_inverse[:m], ref_transforms[rpe_delta:])
+    est_rel = np.einsum("nij,njk->nik", est_inverse[:m], est_transforms[rpe_delta:])
+    err_transforms = np.einsum("nij,njk->nik", invert_rigid(ref_rel), est_rel)
+    rpe_errors = np.linalg.norm(err_transforms[:, :3, 3], axis=1)
     rpe_rmse, rpe_mean, rpe_max = _rmse_stats(rpe_errors)
 
     return MetricsResult(

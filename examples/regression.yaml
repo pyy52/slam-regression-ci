@@ -1,0 +1,7 @@
+# Thresholds used by the bundled examples and the CI smoke runs.
+metrics:
+  ate_rmse:
+    max_relative_regression_percent: 10
+
+  rpe_translation_rmse:
+    max_relative_regression_percent: 10
