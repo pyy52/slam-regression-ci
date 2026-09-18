@@ -22,15 +22,11 @@ from .config import Config, load_config
 from .errors import ConfigError, SlamRegressionError
 from .metrics import compute_metrics
 from .policy import ComparisonResult, evaluate
+from .report import METRIC_KEYS, METRIC_LABELS, ReportContext, render_markdown
 from .trajectories import associate_trajectories, load_tum
 
 BASELINE_SCHEMA = "slam-regression-baseline/v1"
 REPORT_SCHEMA = "slam-regression-report/v1"
-METRIC_LABELS = {
-    "ate_rmse": "ATE RMSE",
-    "rpe_translation_rmse": "RPE translation RMSE",
-}
-METRIC_KEYS = ("ate_rmse", "ate_mean", "ate_max", "rpe_translation_rmse", "rpe_mean", "rpe_max")
 
 
 def _utc_now_iso() -> str:
@@ -167,25 +163,40 @@ def _command_compare(args: argparse.Namespace) -> int:
                 "values may not be directly comparable"
             )
 
+    inputs = {
+        "reference": os.path.basename(args.reference),
+        "estimate": os.path.basename(args.estimate),
+    }
+    settings = _settings_dict(config)
+    context = ReportContext(
+        tool_version=__version__,
+        created_utc=_utc_now_iso(),
+        baseline_file=os.path.basename(args.baseline),
+        inputs=inputs,
+        settings=settings,
+        candidate_num_pairs=candidate_metrics["num_pairs"],
+        warnings=list(result.warnings),
+    )
     payload = {
         "schema": REPORT_SCHEMA,
         "tool_version": __version__,
-        "created_utc": _utc_now_iso(),
+        "created_utc": context.created_utc,
         "passed": result.passed,
         "comparisons": [c.to_dict() for c in result.comparisons],
         "warnings": list(result.warnings),
+        "settings": settings,
         "candidate": {
             "metrics": candidate_values,
             "num_pairs": candidate_metrics["num_pairs"],
         },
-        "baseline_file": os.path.basename(args.baseline),
-        "inputs": {
-            "reference": os.path.basename(args.reference),
-            "estimate": os.path.basename(args.estimate),
-        },
+        "baseline_file": context.baseline_file,
+        "inputs": inputs,
     }
     if args.json:
         _write_json(args.json, payload)
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as handle:
+            handle.write(render_markdown(result, context))
 
     _print_comparisons(result)
     return 0 if result.passed else 1
@@ -217,6 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--estimate", required=True, help="candidate estimate trajectory (TUM format)")
     compare.add_argument("--config", default=None, help="YAML config (defaults are used if omitted)")
     compare.add_argument("--json", default=None, help="write a JSON report to this path")
+    compare.add_argument("--report", default=None, help="write a Markdown report to this path")
     compare.set_defaults(func=_command_compare)
     return parser
 
