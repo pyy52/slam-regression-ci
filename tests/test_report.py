@@ -1,6 +1,7 @@
 import json
 
 from slam_regression.cli import main
+from slam_regression.config import MetricThreshold
 from slam_regression.policy import ComparisonResult, compare_metric
 from slam_regression.report import ReportContext, render_markdown
 from test_cli import fixed_noise, line_positions, write_tum
@@ -29,8 +30,10 @@ class TestRenderMarkdown:
         result = ComparisonResult(
             passed=True,
             comparisons=[
-                compare_metric("ate_rmse", 0.10, 0.105, 10.0),
-                compare_metric("rpe_translation_rmse", 0.01, 0.0105, 10.0),
+                compare_metric("ate_rmse", 0.10, 0.105, MetricThreshold(max_relative_regression_percent=10.0)),
+                compare_metric(
+                    "rpe_translation_rmse", 0.01, 0.0105, MetricThreshold(max_relative_regression_percent=10.0)
+                ),
             ],
         )
         text = render_markdown(result, make_context())
@@ -43,7 +46,8 @@ class TestRenderMarkdown:
 
     def test_failing_report_marks_verdict_and_row(self):
         result = ComparisonResult(
-            passed=False, comparisons=[compare_metric("ate_rmse", 0.10, 0.20, 10.0)]
+            passed=False,
+            comparisons=[compare_metric("ate_rmse", 0.10, 0.20, MetricThreshold(max_relative_regression_percent=10.0))],
         )
         text = render_markdown(result, make_context())
         assert "**Verdict: FAIL**" in text
@@ -51,7 +55,8 @@ class TestRenderMarkdown:
 
     def test_note_and_warning_sections(self):
         result = ComparisonResult(
-            passed=False, comparisons=[compare_metric("ate_rmse", 0.0, 0.02, 10.0)]
+            passed=False,
+            comparisons=[compare_metric("ate_rmse", 0.0, 0.02, MetricThreshold(max_relative_regression_percent=10.0))],
         )
         text = render_markdown(result, make_context(warnings=["baseline settings mismatch"]))
         assert "## Notes" in text
@@ -60,10 +65,37 @@ class TestRenderMarkdown:
 
     def test_unset_threshold_and_change_render_as_na(self):
         result = ComparisonResult(
-            passed=True, comparisons=[compare_metric("ate_rmse", 0.1, 0.2, None)]
+            passed=True, comparisons=[compare_metric("ate_rmse", 0.1, 0.2, MetricThreshold())]
         )
         text = render_markdown(result, make_context())
         assert "| ATE RMSE | 0.100000 m | 0.200000 m | n/a | - | PASS |" in text
+
+    def test_absolute_and_ceiling_rules_rendered(self):
+        threshold = MetricThreshold(max_absolute_regression=0.03, max_value=0.25)
+        result = ComparisonResult(
+            passed=False, comparisons=[compare_metric("ate_rmse", 0.10, 0.30, threshold)]
+        )
+        text = render_markdown(result, make_context())
+        assert "Δ≤0.03 m / ≤0.25 m" in text
+        assert "Δ+0.2 m" in text
+        assert "exceeds ceiling" in text
+
+    def test_coverage_section_rendered(self):
+        result = ComparisonResult(passed=False, comparisons=[])
+        result.coverage = {
+            "matched_pose_count": 15,
+            "reference_pose_count": 30,
+            "matched_pose_ratio": 0.5,
+            "time_coverage_ratio": 0.5,
+            "min_matched_pose_ratio": 0.9,
+            "min_time_coverage_ratio": None,
+            "passed": False,
+            "notes": ["matched pose ratio 0.5000 below minimum 0.9"],
+        }
+        text = render_markdown(result, make_context())
+        assert "- coverage: 15/30 poses (0.5000)" in text
+        assert "- time coverage: 0.5000" in text
+        assert "- coverage gate: matched pose ratio 0.5000 below minimum 0.9" in text
 
     def test_disabled_alignment_described(self):
         result = ComparisonResult(passed=True, comparisons=[])

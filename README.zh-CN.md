@@ -105,25 +105,34 @@ STATUS: FAIL
 
 ```yaml
 metrics:
-  # 允许相对基线的最大增幅（百分比）。改善（负变化）始终通过。
-  # 设为 0 表示拒绝任何增幅。
+  # 任一已配置规则超限即失败，因此只配置你需要的规则。
+  # 相对/绝对规则对改善（负变化）始终放行；max_value 是绝对上限。
   ate_rmse:
-    max_relative_regression_percent: 10
+    max_relative_regression_percent: 10   # 相对基线的最大增幅（百分比）
+    max_absolute_regression: 0.03         # ……且绝对增幅不超过 3 厘米
+    # max_value: 0.25                     # 指标本身的绝对上限
   rpe_translation_rmse:
     max_relative_regression_percent: 10
 
 association:
-  max_timestamp_diff: 0.01   # 配对位姿的时间戳最大差值（秒）
+  max_timestamp_diff: 0.01   # 单位秒；每个参考位姿与其"最近"的估计位姿配对
 
 alignment:
   enabled: true              # 用 Umeyama 方法将估计对齐到参考
   correct_scale: false       # 额外估计统一尺度（单目场景）
 
+coverage:
+  # 可选门禁：候选实际跟踪到的参考比例（及早发现"只跑了一小段"的假象结果）。
+  min_matched_pose_ratio: 0.95
+  min_time_coverage_ratio: 0.95
+
 rpe_delta: 1                 # 相对位姿误差的帧间隔
 ```
 
 所有键都可省略：省略 `metrics` 保留默认阈值，省略整个文件则全部使用默认值。
-未知键与非法值会被拒绝，并给出可操作的错误信息。
+未知键与非法值会被拒绝，并给出可操作的错误信息。基线会记录输入文件的
+sha256 指纹；当真值文件被改动、或度量语义设置不一致时，compare 会直接报错
+（退出码 2），除非显式指定 `--allow-incompatible-baseline`。
 
 ## 作为 CI 门禁用于你的仓库
 

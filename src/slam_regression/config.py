@@ -30,13 +30,35 @@ import yaml
 from .errors import ConfigError
 
 KNOWN_METRICS = ("ate_rmse", "rpe_translation_rmse")
-METRIC_RULE_KEY = "max_relative_regression_percent"
-KNOWN_TOP_LEVEL_KEYS = ("metrics", "association", "alignment", "rpe_delta")
+METRIC_RULE_KEYS = (
+    "max_relative_regression_percent",
+    "max_absolute_regression",
+    "max_value",
+)
+KNOWN_TOP_LEVEL_KEYS = ("metrics", "association", "alignment", "rpe_delta", "coverage")
 
 
 @dataclass
 class MetricThreshold:
+    """Per-metric regression rules; a metric fails when ANY configured rule is exceeded.
+
+    All metrics are error measures (lower is better), in meters.
+
+    - ``max_relative_regression_percent``: candidate may exceed the baseline by
+      at most this relative amount (percent).
+    - ``max_absolute_regression``: candidate may exceed the baseline by at most
+      this absolute amount (meters). Robust when the baseline is tiny or huge.
+    - ``max_value``: absolute ceiling on the candidate value itself.
+    """
+
     max_relative_regression_percent: Optional[float] = None
+    max_absolute_regression: Optional[float] = None
+    max_value: Optional[float] = None
+
+    def is_empty(self) -> bool:
+        return all(
+            getattr(self, key) is None for key in METRIC_RULE_KEYS
+        )
 
 
 @dataclass
@@ -51,10 +73,23 @@ class AlignmentConfig:
 
 
 @dataclass
+class CoverageConfig:
+    """Optional trajectory-coverage gates (ratios in [0, 1]).
+
+    A candidate that tracks only part of the reference (early tracking loss)
+    can look good on ATE while having failed; these gates catch that.
+    """
+
+    min_matched_pose_ratio: Optional[float] = None
+    min_time_coverage_ratio: Optional[float] = None
+
+
+@dataclass
 class Config:
     metrics: Dict[str, MetricThreshold] = field(default_factory=dict)
     association: AssociationConfig = field(default_factory=AssociationConfig)
     alignment: AlignmentConfig = field(default_factory=AlignmentConfig)
+    coverage: CoverageConfig = field(default_factory=CoverageConfig)
     rpe_delta: int = 1
 
     @property
@@ -106,27 +141,64 @@ def _parse_metrics(raw: Any) -> Dict[str, MetricThreshold]:
                 "unknown metric '{}'; valid metrics are: {}".format(name, ", ".join(KNOWN_METRICS))
             )
         if rule is None:
-            metrics[name] = MetricThreshold(None)
+            metrics[name] = MetricThreshold()
             continue
         if not isinstance(rule, dict):
             raise ConfigError(
-                f"metric '{name}' must be a mapping with key '{METRIC_RULE_KEY}'"
+                f"metric '{name}' must be a mapping with rule keys: "
+                f"{', '.join(METRIC_RULE_KEYS)}"
             )
-        unknown = [key for key in rule if key != METRIC_RULE_KEY]
+        unknown = [key for key in rule if key not in METRIC_RULE_KEYS]
         if unknown:
             raise ConfigError(
-                "metric '{}' has unknown option(s): {}; only '{}' is supported".format(
-                    name, ", ".join(sorted(unknown)), METRIC_RULE_KEY
+                "metric '{}' has unknown option(s): {}; valid rule keys are: {}".format(
+                    name, ", ".join(sorted(unknown)), ", ".join(METRIC_RULE_KEYS)
                 )
             )
-        threshold_value = rule.get(METRIC_RULE_KEY)
-        threshold = None
-        if threshold_value is not None:
-            threshold = _as_non_negative_number(
-                threshold_value, f"metrics.{name}.{METRIC_RULE_KEY}"
-            )
-        metrics[name] = MetricThreshold(threshold)
+        metrics[name] = MetricThreshold(
+            max_relative_regression_percent=_optional_non_negative(
+                rule.get("max_relative_regression_percent"),
+                f"metrics.{name}.max_relative_regression_percent",
+            ),
+            max_absolute_regression=_optional_non_negative(
+                rule.get("max_absolute_regression"),
+                f"metrics.{name}.max_absolute_regression",
+            ),
+            max_value=_optional_non_negative(
+                rule.get("max_value"), f"metrics.{name}.max_value"
+            ),
+        )
     return metrics
+
+
+def _optional_non_negative(value: Any, what: str) -> Optional[float]:
+    if value is None:
+        return None
+    return _as_non_negative_number(value, what)
+
+
+def _parse_coverage(raw: Any) -> CoverageConfig:
+    if raw is None:
+        return CoverageConfig()
+    if not isinstance(raw, dict):
+        raise ConfigError("'coverage' must be a mapping")
+    known = ("min_matched_pose_ratio", "min_time_coverage_ratio")
+    unknown = [key for key in raw if key not in known]
+    if unknown:
+        raise ConfigError("'coverage' has unknown option(s): {}".format(", ".join(sorted(unknown))))
+
+    def _ratio(value: Any, what: str) -> Optional[float]:
+        if value is None:
+            return None
+        number = _as_non_negative_number(value, what)
+        if number > 1.0:
+            raise ConfigError(f"{what} is a ratio and must be <= 1, got {value}")
+        return number
+
+    return CoverageConfig(
+        min_matched_pose_ratio=_ratio(raw.get("min_matched_pose_ratio"), "coverage.min_matched_pose_ratio"),
+        min_time_coverage_ratio=_ratio(raw.get("min_time_coverage_ratio"), "coverage.min_time_coverage_ratio"),
+    )
 
 
 def _parse_association(raw: Any) -> AssociationConfig:
@@ -184,6 +256,7 @@ def config_from_dict(raw: Optional[dict]) -> Config:
         metrics = _parse_metrics(metrics_raw)
     association = _parse_association(raw.get("association"))
     alignment = _parse_alignment(raw.get("alignment"))
+    coverage = _parse_coverage(raw.get("coverage"))
 
     rpe_delta_raw = raw.get("rpe_delta", 1)
     if not isinstance(rpe_delta_raw, int) or isinstance(rpe_delta_raw, bool) or rpe_delta_raw < 1:
@@ -193,6 +266,7 @@ def config_from_dict(raw: Optional[dict]) -> Config:
         metrics=metrics,
         association=association,
         alignment=alignment,
+        coverage=coverage,
         rpe_delta=rpe_delta_raw,
     )
 

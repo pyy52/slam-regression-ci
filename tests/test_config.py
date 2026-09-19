@@ -62,7 +62,7 @@ class TestValidation:
 
     def test_unknown_metric_option(self):
         with pytest.raises(ConfigError, match="unknown option"):
-            config_from_dict({"metrics": {"ate_rmse": {"max_value": 1}}})
+            config_from_dict({"metrics": {"ate_rmse": {"max_relative_regression": 1}}})
 
     def test_empty_metrics_rejected(self):
         with pytest.raises(ConfigError, match="at least one"):

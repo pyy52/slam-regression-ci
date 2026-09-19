@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Trajectory-coverage gates: `compare` now reports matched pose ratio and
+  time coverage ratio against the reference, with optional config gates
+  (`coverage.min_matched_pose_ratio`, `coverage.min_time_coverage_ratio`).
+  A candidate that loses tracking early can no longer look good on ATE.
+- Absolute threshold policies per metric: `max_absolute_regression`
+  (baseline-relative budget in meters) and `max_value` (absolute ceiling).
+  A metric fails when any configured rule is exceeded, so percent-only,
+  absolute-only, or combined policies are all expressible.
 - Baselines now record sha256 fingerprints of the reference and estimate
   trajectories and of the config file (`input_hashes`, `config_sha256`),
   so a silently changed ground-truth file can no longer invalidate a

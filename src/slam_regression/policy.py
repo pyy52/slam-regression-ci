@@ -1,9 +1,14 @@
 """Threshold policy: decide whether a candidate metric regressed.
 
 All metrics produced by :mod:`slam_regression.metrics` are error measures where
-lower is better, so a positive relative change means a regression and a
-negative change means an improvement. A candidate passes when its relative
-change is less than or equal to the configured threshold.
+lower is better, in meters. A metric fails when ANY of its configured rules is
+exceeded:
+
+- relative: ``(candidate - baseline) / baseline * 100`` must be at most
+  ``max_relative_regression_percent`` (improvements always pass)
+- absolute: ``candidate - baseline`` must be at most
+  ``max_absolute_regression`` (robust for very small or very large baselines)
+- ceiling: ``candidate`` itself must be at most ``max_value``
 """
 
 from __future__ import annotations
@@ -23,6 +28,9 @@ class MetricComparison:
     candidate: float
     change_percent: Optional[float]
     threshold_percent: Optional[float]
+    absolute_budget: Optional[float]
+    absolute_excess: Optional[float]
+    max_value: Optional[float]
     passed: bool
     note: Optional[str] = None
 
@@ -33,6 +41,9 @@ class MetricComparison:
             "candidate": self.candidate,
             "change_percent": self.change_percent,
             "threshold_percent": self.threshold_percent,
+            "absolute_budget": self.absolute_budget,
+            "absolute_excess": self.absolute_excess,
+            "max_value": self.max_value,
             "passed": self.passed,
             "note": self.note,
         }
@@ -45,66 +56,81 @@ class ComparisonResult:
     passed: bool
     comparisons: List[MetricComparison] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    coverage: Optional[dict] = None
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "passed": self.passed,
             "comparisons": [c.to_dict() for c in self.comparisons],
             "warnings": list(self.warnings),
         }
+        if self.coverage is not None:
+            payload["coverage"] = self.coverage
+        return payload
 
 
-def compare_metric(
-    metric: str, baseline: float, candidate: float, threshold_percent: Optional[float]
-) -> MetricComparison:
-    """Compare one metric against the baseline under a relative threshold."""
+def _rule_notes(threshold) -> List[str]:
+    notes = []
+    if threshold.max_relative_regression_percent is None and \
+            threshold.max_absolute_regression is None and threshold.max_value is None:
+        notes.append("no threshold configured; metric reported without gating")
+    return notes
+
+
+def compare_metric(metric: str, baseline: float, candidate: float, threshold) -> MetricComparison:
+    """Compare one metric against the baseline under its configured rules.
+
+    ``threshold`` is a :class:`slam_regression.config.MetricThreshold`.
+    """
     if baseline < 0.0 or candidate < 0.0:
         raise MetricsError(
             f"metric values must be non-negative ({metric}: baseline={baseline}, candidate={candidate})"
         )
 
-    if threshold_percent is None:
-        return MetricComparison(
-            metric=metric,
-            baseline=baseline,
-            candidate=candidate,
-            change_percent=None,
-            threshold_percent=None,
-            passed=True,
-            note="no threshold configured; metric reported without gating",
-        )
+    failures: List[str] = []
+    change_percent: Optional[float] = None
+    relative_ok = True
+    absolute_excess: Optional[float] = None
 
-    if baseline == 0.0:
-        if candidate == 0.0:
-            return MetricComparison(
-                metric=metric,
-                baseline=baseline,
-                candidate=candidate,
-                change_percent=0.0,
-                threshold_percent=threshold_percent,
-                passed=True,
+    if threshold.max_relative_regression_percent is not None:
+        if baseline == 0.0:
+            if candidate == 0.0:
+                change_percent = 0.0
+                relative_ok = True
+            else:
+                change_percent = None
+                relative_ok = False
+                failures.append(
+                    "baseline is 0 while candidate is > 0; relative change is undefined "
+                    "and treated as a regression"
+                )
+        else:
+            change_percent = (candidate - baseline) / abs(baseline) * 100.0
+            relative_ok = change_percent <= threshold.max_relative_regression_percent
+
+    if threshold.max_absolute_regression is not None:
+        absolute_excess = candidate - baseline
+        if absolute_excess > threshold.max_absolute_regression:
+            failures.append(
+                f"absolute regression {absolute_excess:.6f} m exceeds budget "
+                f"{threshold.max_absolute_regression:.6f} m"
             )
-        return MetricComparison(
-            metric=metric,
-            baseline=baseline,
-            candidate=candidate,
-            change_percent=None,
-            threshold_percent=threshold_percent,
-            passed=False,
-            note=(
-                "baseline is 0 while candidate is > 0; relative change is undefined "
-                "and treated as a regression"
-            ),
-        )
 
-    change_percent = (candidate - baseline) / abs(baseline) * 100.0
+    if threshold.max_value is not None and candidate > threshold.max_value:
+        failures.append(f"candidate value {candidate:.6f} m exceeds ceiling {threshold.max_value:.6f} m")
+
+    passed = relative_ok and not failures
     return MetricComparison(
         metric=metric,
         baseline=baseline,
         candidate=candidate,
         change_percent=change_percent,
-        threshold_percent=threshold_percent,
-        passed=change_percent <= threshold_percent,
+        threshold_percent=threshold.max_relative_regression_percent,
+        absolute_budget=threshold.max_absolute_regression,
+        absolute_excess=absolute_excess,
+        max_value=threshold.max_value,
+        passed=passed,
+        note="; ".join(failures) if failures else ("; ".join(_rule_notes(threshold)) or None),
     )
 
 
@@ -114,16 +140,18 @@ def evaluate(
     metric_names: List[str],
     thresholds: dict,
 ) -> ComparisonResult:
-    """Evaluate all configured metrics and combine into an overall verdict."""
+    """Evaluate all configured metrics and combine into an overall verdict.
+
+    ``thresholds`` maps metric name to its MetricThreshold rules object.
+    """
     comparisons: List[MetricComparison] = []
     for name in metric_names:
         if name not in baseline_metrics:
             raise MetricsError(f"baseline is missing metric '{name}'")
         if name not in candidate_metrics:
             raise MetricsError(f"candidate is missing metric '{name}'")
-        threshold = thresholds.get(name)
         comparisons.append(
-            compare_metric(name, baseline_metrics[name], candidate_metrics[name], threshold)
+            compare_metric(name, baseline_metrics[name], candidate_metrics[name], thresholds.get(name))
         )
     passed = all(c.passed for c in comparisons)
     return ComparisonResult(passed=passed, comparisons=comparisons)

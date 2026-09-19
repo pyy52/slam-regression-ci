@@ -46,12 +46,6 @@ def _format_change(change: Optional[float]) -> str:
     return f"{change:+.2f}%"
 
 
-def _format_threshold(threshold: Optional[float]) -> str:
-    if threshold is None:
-        return "-"
-    return f"{threshold:+.2f}%"
-
-
 def _format_alignment(settings: Dict[str, object]) -> str:
     alignment = settings.get("alignment", {}) if isinstance(settings, dict) else {}
     if not alignment.get("enabled", True):
@@ -59,6 +53,26 @@ def _format_alignment(settings: Dict[str, object]) -> str:
     if alignment.get("correct_scale", False):
         return "Umeyama with scale correction"
     return "Umeyama (rigid SE(3))"
+
+
+def _format_rules(comparison) -> str:
+    """Compact rendering of every configured rule for the table's Threshold cell."""
+    parts: List[str] = []
+    if comparison.threshold_percent is not None:
+        parts.append(f"{comparison.threshold_percent:+.2f}%")
+    if comparison.absolute_budget is not None:
+        parts.append(f"Δ≤{comparison.absolute_budget:.6g} m")
+    if comparison.max_value is not None:
+        parts.append(f"≤{comparison.max_value:.6g} m")
+    return " / ".join(parts) if parts else "-"
+
+
+def _format_change_cell(comparison) -> str:
+    if comparison.change_percent is not None:
+        return _format_change(comparison.change_percent)
+    if comparison.absolute_excess is not None:
+        return f"Δ{comparison.absolute_excess:+.6g} m"
+    return "n/a"
 
 
 def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
@@ -84,8 +98,8 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
                 label,
                 comparison.baseline,
                 comparison.candidate,
-                _format_change(comparison.change_percent),
-                _format_threshold(comparison.threshold_percent),
+                _format_change_cell(comparison),
+                _format_rules(comparison),
                 "PASS" if comparison.passed else "FAIL",
             )
         )
@@ -102,6 +116,21 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
         if isinstance(context.settings.get("association", {}), dict)
         else "n/a"
     ))
+    if result.coverage is not None:
+        coverage = result.coverage
+        pose_ratio = coverage.get("matched_pose_ratio")
+        time_ratio = coverage.get("time_coverage_ratio")
+        lines.append(
+            "- coverage: {}/{} poses ({})".format(
+                coverage.get("matched_pose_count", "n/a"),
+                coverage.get("reference_pose_count", "n/a"),
+                "n/a" if pose_ratio is None else f"{pose_ratio:.4f}",
+            )
+        )
+        if time_ratio is not None:
+            lines.append(f"- time coverage: {time_ratio:.4f}")
+        for note in coverage.get("notes", []):
+            lines.append(f"- coverage gate: {note}")
 
     notes: List[str] = []
     for comparison in result.comparisons:
