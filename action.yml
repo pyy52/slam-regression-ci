@@ -54,3 +54,10 @@ runs:
           cat "${{ inputs.report }}"
         fi
         exit $code
+    - name: Append report to the job summary
+      if: always()
+      shell: bash
+      run: |
+        if [ -f "${{ inputs.report }}" ] && [ -n "$GITHUB_STEP_SUMMARY" ]; then
+          cat "${{ inputs.report }}" >> "$GITHUB_STEP_SUMMARY"
+        fi

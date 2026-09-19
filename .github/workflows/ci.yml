@@ -104,7 +104,8 @@ jobs:
           reference: examples/reference.tum
           estimate: examples/candidate_degraded.tum
           config: examples/regression.yaml
-      - name: Assert degraded case failed and report exists
+      - name: Assert degraded case failed, report exists, and job summary has it
         run: |
           test "${{ steps.degraded.outcome }}" = "failure"
           test -f regression_report.md
+          grep -q "Verdict: FAIL" "$GITHUB_STEP_SUMMARY"
