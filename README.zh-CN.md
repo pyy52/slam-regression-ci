@@ -123,6 +123,9 @@ alignment:
 
 coverage:
   # 可选门禁：候选实际跟踪到的参考比例（及早发现"只跑了一小段"的假象结果）。
+  # 关键帧式估计（ORB-SLAM 等）建议用 min_time_coverage_ratio：关键帧输出
+  # 本来就只匹配参考的一小部分位姿（matched_pose_ratio 低是正常的），
+  # 但它仍覆盖完整时间线。
   min_matched_pose_ratio: 0.95
   min_time_coverage_ratio: 0.95
 
@@ -206,6 +209,11 @@ ATE/RPE 基于 numpy 实现，遵循 TUM RGB-D benchmark 的约定；CI 会在�
 - **TUM 文本文件**：`timestamp tx ty tz qx qy qz qw`（每行一个位姿，允许 `#`
   注释，四元数顺序为 x y z w）——TUM RGB-D benchmark 工具的输出格式，evo 也
   使用该格式。
+
+时间戳关联为**一对一最近邻**：每个参考位姿与其最近的、未被使用的估计位姿
+配对（容差 `max_timestamp_diff`，与 TUM 原版 benchmark 脚本一致）。evo 当前
+实现允许多个参考位姿共用同一个估计位姿，因此在稀疏/关键帧估计下两者数值
+会有差异——我们的结果基于物理上不重复的位姿对。
 
 ## 局限
 

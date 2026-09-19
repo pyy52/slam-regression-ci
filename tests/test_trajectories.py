@@ -176,6 +176,18 @@ class TestAssociate:
         ri, ei = associate(ref, est, max_diff=0.05)
         assert ei == [0, 2]
 
+    def test_one_to_one_no_estimate_pose_reused(self):
+        # A dense reference against a sparse estimate: every reference pose is
+        # within tolerance of estimate pose 0, but one-to-one pairing must
+        # match it at most once (evo's many-to-one would return 5 pairs).
+        ref = [1.00, 1.01, 1.02, 1.03, 1.04]
+        est = [1.02]
+        ri, ei = associate(ref, est, max_diff=0.05)
+        assert len(ri) == 1
+        assert len(ei) == 1
+        assert ei == [0]
+        assert len(set(ei)) == len(ei)
+
     def test_associate_trajectories_shapes(self):
         from slam_regression.trajectories import Trajectory
 
