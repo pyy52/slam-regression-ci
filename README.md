@@ -1,3 +1,5 @@
+English | [简体中文](README.zh-CN.md)
+
 # slam-regression-ci
 
 [![CI](https://github.com/pyy52/slam-regression-ci/actions/workflows/ci.yml/badge.svg)](https://github.com/pyy52/slam-regression-ci/actions/workflows/ci.yml)
