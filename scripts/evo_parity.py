@@ -90,6 +90,30 @@ def main() -> int:
         except ImportError:
             print("error: evo is not installed; run: pip install evo", file=sys.stderr)
             return 2
+
+        # Association parity: our index pairs must equal evo's on these inputs.
+        from evo.core import sync as evo_sync
+        from evo.tools import file_interface
+
+        ref_traj = file_interface.read_tum_trajectory_file(args.reference)
+        est_traj = file_interface.read_tum_trajectory_file(estimate_path)
+        evo_ri, evo_ei = evo_sync.matching_time_indices(
+            ref_traj.timestamps, est_traj.timestamps, max_diff=0.01
+        )
+        from slam_regression.trajectories import associate
+
+        my_ri, my_ei = associate(ref_traj.timestamps, est_traj.timestamps, 0.01)
+        if list(my_ri) != list(evo_ri) or list(my_ei) != list(evo_ei):
+            failed = True
+            print(
+                f"association MISMATCH vs evo for {estimate_path}: "
+                f"ours {len(my_ri)} pairs {list(zip(my_ri, my_ei))[:5]}..., "
+                f"evo {len(evo_ri)} pairs {list(zip(evo_ri, evo_ei))[:5]}...",
+                file=sys.stderr,
+            )
+        else:
+            print(f"{estimate_path.split('/')[-1]}: association {len(my_ri)} pairs  ok")
+
         for metric in ("ate_rmse", "rpe_translation_rmse"):
             ours_value = ours[metric]
             evo_value = reference[metric]
