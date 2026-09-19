@@ -231,8 +231,7 @@ tool for advanced evaluation; this project deliberately stays minimal.
 
 ## Roadmap
 
-- PyPI package (`slam-regression-ci`) — publish workflow ready, waiting on
-  [Trusted Publishing registration](PUBLISHING.md)
+- ~~PyPI package~~ — [on PyPI](https://pypi.org/project/slam-regression-ci/)
 - KITTI pose file support
 - Additional metrics (RPE with configurable delta units, rotation error)
 - Optional PR comment with the regression summary
