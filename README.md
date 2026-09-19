@@ -224,10 +224,13 @@ tool for advanced evaluation; this project deliberately stays minimal.
   the TUM RGB-D benchmark tools and consumed by evo.
 
 Timestamp association is **one-to-one nearest**: each reference pose is paired
-with its nearest unused estimate pose within `max_timestamp_diff` (matching the
-original TUM benchmark script). evo's current matcher instead allows many
-reference poses to share one estimate pose, so numbers can differ for
-sparse/keyframe estimates — ours are computed on physically distinct pairs.
+with its nearest estimate pose not already in use, within `max_timestamp_diff`.
+On real data this yields the same pair count as evo's own synchronization; small
+metric differences (≤0.3% on a real ORB-SLAM keyframe run) can arise from the
+selection order (evo picks each estimate pose's nearest reference, we pick each
+reference pose's nearest estimate). The original TUM benchmark script used a
+similar one-to-one walk but took the first pose within tolerance instead of the
+nearest.
 
 ## Limitations
 
