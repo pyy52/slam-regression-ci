@@ -131,6 +131,9 @@ alignment:
 coverage:
   # Optional gates on how much of the reference the candidate tracks
   # (catches early tracking loss that would otherwise look like a good ATE).
+  # For keyframe-based estimates (ORB-SLAM etc.) prefer min_time_coverage_ratio:
+  # a keyframe output matches only a fraction of reference poses by design
+  # (low matched_pose_ratio is normal), but it still spans the whole timeline.
   min_matched_pose_ratio: 0.95
   min_time_coverage_ratio: 0.95
 
@@ -219,6 +222,12 @@ tool for advanced evaluation; this project deliberately stays minimal.
 - **TUM text files**: `timestamp tx ty tz qx qy qz qw` (one pose per line,
   `#` comments allowed, quaternion order x y z w) — the format produced by
   the TUM RGB-D benchmark tools and consumed by evo.
+
+Timestamp association is **one-to-one nearest**: each reference pose is paired
+with its nearest unused estimate pose within `max_timestamp_diff` (matching the
+original TUM benchmark script). evo's current matcher instead allows many
+reference poses to share one estimate pose, so numbers can differ for
+sparse/keyframe estimates — ours are computed on physically distinct pairs.
 
 ## Limitations
 
