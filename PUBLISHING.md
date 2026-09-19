@@ -32,3 +32,5 @@ by the maintainer.
 3. Tag and push: `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`.
 4. Create the GitHub release with concise notes; PyPI upload happens
    automatically from the same tag.
+5. Move the major version tag so `uses: pyy52/slam-regression-ci@v0` keeps
+   working: `git tag -f v0 vX.Y.Z && git push -f origin v0`.
