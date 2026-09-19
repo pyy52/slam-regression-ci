@@ -190,6 +190,29 @@ jobs:
             regression_report.json
 ```
 
+真实 SLAM 系统通常要在多个序列上评测。定义一个**套件**，得到一个汇总判定，
+失败的序列按"退化最严重优先"排序：
+
+```yaml
+# suite.yaml
+sequences:
+  - name: room1
+    baseline: baselines/room1.json
+    reference: data/room1_gt.tum
+    estimate: results/room1_est.tum
+  - name: corridor
+    baseline: baselines/corridor.json
+    reference: data/corridor_gt.tum
+    estimate: [results/corridor_run1.tum, results/corridor_run2.tum]  # 多次运行取 median
+
+suite_policy:
+  max_failed_sequences: 0   # 失败序列数超过该值时整体失败
+```
+
+```bash
+slam-regression suite --config suite.yaml --report suite_report.md --json suite_report.json
+```
+
 也可以用一行 Action（本仓库同时是一个 composite action）：
 
 ```yaml

@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-sequence suites**: new `slam-regression suite` subcommand runs a
+  list of sequences (each with its own baseline/reference/estimates and
+  optional per-sequence config) and combines them into one verdict under
+  `suite_policy.max_failed_sequences`; suite reports (Markdown/JSON) order
+  failed sequences worst-regression first.
 - **Multi-run baselines** (baseline schema v2): `record --estimate a.tum b.tum
   ...` records per-run metric values plus median/MAD/mean/std; `compare
   --estimate c1.tum c2.tum` gates the median of repeated candidate runs. New

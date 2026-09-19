@@ -206,6 +206,30 @@ Commit the baseline JSON (`baselines/room1_baseline.json`) once, and every
 pull request that makes localization worse will fail — with an attached
 Markdown report explaining exactly which metric moved.
 
+Real SLAM systems are evaluated on more than one sequence. Define a **suite**
+and get one combined verdict, with failed sequences ordered worst-regression
+first:
+
+```yaml
+# suite.yaml
+sequences:
+  - name: room1
+    baseline: baselines/room1.json
+    reference: data/room1_gt.tum
+    estimate: results/room1_est.tum
+  - name: corridor
+    baseline: baselines/corridor.json
+    reference: data/corridor_gt.tum
+    estimate: [results/corridor_run1.tum, results/corridor_run2.tum]  # median of runs
+
+suite_policy:
+  max_failed_sequences: 0   # overall fails if more than this many sequences fail
+```
+
+```bash
+slam-regression suite --config suite.yaml --report suite_report.md --json suite_report.json
+```
+
 Prefer a one-line action instead? The repository is also a composite action:
 
 ```yaml
