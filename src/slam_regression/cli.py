@@ -24,7 +24,10 @@ from .errors import ConfigError, SlamRegressionError
 from .metrics import compute_metrics
 from .policy import ComparisonResult, evaluate
 from .report import METRIC_KEYS, METRIC_LABELS, ReportContext, render_markdown
+from .suites import load_suite_config
 from .trajectories import associate_trajectories, load_tum
+
+SUITE_REPORT_SCHEMA = "slam-regression-suite-report/v1"
 
 BASELINE_SCHEMA = "slam-regression-baseline/v1"
 BASELINE_SCHEMA_MULTI = "slam-regression-baseline/v2"
@@ -37,9 +40,12 @@ def _utc_now_iso() -> str:
 
 def _sha256(path: str) -> str:
     digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(65536), b""):
-            digest.update(chunk)
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    except OSError as exc:
+        raise ConfigError(f"cannot read file '{path}': {exc.strerror or exc}") from None
     return digest.hexdigest()
 
 
@@ -369,16 +375,27 @@ def _load_baseline_metrics(baseline: dict) -> tuple:
     return baseline["metrics"], None
 
 
-def _command_compare(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    baseline = _load_baseline(args.baseline)
+def _run_comparison(
+    baseline_path: str,
+    reference_path: str,
+    estimates: List[str],
+    config: Config,
+    allow_incompatible: bool = False,
+):
+    """Run the full comparison pipeline for one sequence; returns report pieces.
+
+    Returns ``(candidate_metrics, candidate_values, candidate_stats,
+    multi_candidate, baseline_runs, result)``. ``result`` includes coverage
+    gating and provenance warnings; ``baseline_runs`` is the baseline run
+    count for v2 distributions (None for single-run baselines).
+    """
+    baseline = _load_baseline(baseline_path)
     provenance_warnings = _check_baseline_compatibility(
-        baseline, config, args.reference, args.allow_incompatible_baseline
+        baseline, config, reference_path, allow_incompatible
     )
     baseline_metrics, baseline_distributions = _load_baseline_metrics(baseline)
 
-    estimates = _flatten_estimates(args.estimate)
-    per_run = [_compute_with_coverage(config, args.reference, estimate) for estimate in estimates]
+    per_run = [_compute_with_coverage(config, reference_path, estimate) for estimate in estimates]
     metric_runs = {key: [metrics[key] for metrics, _ in per_run] for key in METRIC_KEYS}
     multi_candidate = len(estimates) > 1
     if multi_candidate:
@@ -402,13 +419,26 @@ def _command_compare(args: argparse.Namespace) -> int:
     result.warnings.extend(provenance_warnings)
 
     # Coverage gates: conservative across runs (worst ratio must pass).
-    gated = [
-        _evaluate_coverage(coverage, config.coverage) for coverage in coverage_infos
-    ]
+    gated = [_evaluate_coverage(coverage, config.coverage) for coverage in coverage_infos]
     worst = min(gated, key=lambda c: (c["matched_pose_ratio"] or 0.0, c["time_coverage_ratio"] or 0.0))
     result.coverage = worst
     if not result.coverage["passed"]:
         result.passed = False
+
+    baseline_runs = None
+    if baseline_distributions:
+        first = next(iter(baseline_distributions.values()), None)
+        if isinstance(first, dict) and "n" in first:
+            baseline_runs = int(first["n"])
+    return candidate_metrics, candidate_values, candidate_stats, multi_candidate, baseline_runs, result
+
+
+def _command_compare(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    estimates = _flatten_estimates(args.estimate)
+    candidate_metrics, candidate_values, candidate_stats, multi_candidate, baseline_runs, result = _run_comparison(
+        args.baseline, args.reference, estimates, config, args.allow_incompatible_baseline
+    )
 
     inputs = {
         "reference": os.path.basename(args.reference),
@@ -419,11 +449,6 @@ def _command_compare(args: argparse.Namespace) -> int:
         ),
     }
     settings = _settings_dict(config)
-    baseline_runs = None
-    if baseline_distributions:
-        first = next(iter(baseline_distributions.values()), None)
-        if isinstance(first, dict) and "n" in first:
-            baseline_runs = int(first["n"])
     context = ReportContext(
         tool_version=__version__,
         created_utc=_utc_now_iso(),
@@ -461,6 +486,104 @@ def _command_compare(args: argparse.Namespace) -> int:
 
     _print_comparisons(result)
     return 0 if result.passed else 1
+
+
+def _sequence_change_percent(result: ComparisonResult, metric: str) -> Optional[float]:
+    for comparison in result.comparisons:
+        if comparison.metric == metric:
+            return comparison.change_percent
+    return None
+
+
+def _command_suite(args: argparse.Namespace) -> int:
+    suite = load_suite_config(args.config)
+    entries = []
+    for spec in suite.sequences:
+        config = load_config(spec.config)
+        try:
+            (_, _, _, _, _, result) = _run_comparison(
+                spec.baseline, spec.reference, spec.estimates, config
+            )
+        except SlamRegressionError as exc:
+            print(f"error: sequence '{spec.name}': {exc}", file=sys.stderr)
+            return 2
+        entry = {
+            "name": spec.name,
+            "passed": result.passed,
+            "result": result,
+            "change_percents": {
+                metric: _sequence_change_percent(result, metric)
+                for metric in config.metric_names
+            },
+        }
+        entries.append(entry)
+
+    failed = [entry for entry in entries if not entry["passed"]]
+    overall_passed = len(failed) <= suite.policy.max_failed_sequences
+
+    # Worst-regression-first ordering for failures: by largest positive change
+    # across the sequence's metrics (None treated as infinitely bad for order).
+    def _worst_change(entry):
+        values = [v for v in entry["change_percents"].values() if v is not None]
+        return max(values) if values else float("inf")
+
+    ordered = entries if overall_passed else sorted(
+        entries, key=lambda e: (e["passed"], -_worst_change(e))
+    )
+
+    print("Sequence results (worst regression first):" if failed else "Sequence results:")
+    for entry in ordered:
+        verdict = "PASS" if entry["passed"] else "FAIL"
+        changes = "  ".join(
+            f"{METRIC_LABELS.get(metric, metric)} {_format_change(change)}"
+            for metric, change in entry["change_percents"].items()
+        )
+        print(f"  {entry['name']:<24} {verdict}  {changes}")
+    failed_count = len(failed)
+    allowed = suite.policy.max_failed_sequences
+    print(
+        f"SUITE STATUS: {'PASS' if overall_passed else 'FAIL'} "
+        f"({failed_count} failed sequence(s), allowed: {allowed})"
+    )
+
+    payload = {
+        "schema": SUITE_REPORT_SCHEMA,
+        "tool_version": __version__,
+        "created_utc": _utc_now_iso(),
+        "passed": overall_passed,
+        "suite_policy": {"max_failed_sequences": allowed},
+        "sequences": [
+            {
+                "name": entry["name"],
+                "passed": entry["passed"],
+                "comparison": entry["result"].to_dict(),
+            }
+            for entry in ordered
+        ],
+    }
+    if args.json:
+        _write_json(args.json, payload)
+    if args.report:
+        lines = ["# SLAM regression suite report", ""]
+        verdict = "PASS" if overall_passed else "FAIL"
+        lines.append(f"**Verdict: {verdict}** ({failed_count} failed, allowed {allowed})")
+        lines.append("")
+        lines.append("| Sequence | Verdict | " + " | ".join(
+            METRIC_LABELS.get(metric, metric) for metric in entries[0]["change_percents"]
+        ) + " |")
+        lines.append("|---|---" + "|---:" * len(entries[0]["change_percents"]) + "|")
+        for entry in ordered:
+            cells = " | ".join(
+                _format_change(entry["change_percents"].get(metric))
+                for metric in entries[0]["change_percents"]
+            )
+            lines.append(
+                f"| {entry['name']} | {'PASS' if entry['passed'] else 'FAIL'} | {cells} |"
+            )
+        lines.append("")
+        with open(args.report, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+    return 0 if overall_passed else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -513,6 +636,14 @@ def build_parser() -> argparse.ArgumentParser:
         "reference fingerprint); a warning is recorded in the report",
     )
     compare.set_defaults(func=_command_compare)
+
+    suite = subparsers.add_parser(
+        "suite", help="run a multi-sequence regression suite and combine the verdicts"
+    )
+    suite.add_argument("--config", required=True, help="suite YAML (sequences + suite_policy)")
+    suite.add_argument("--json", default=None, help="write a JSON suite report to this path")
+    suite.add_argument("--report", default=None, help="write a Markdown suite report to this path")
+    suite.set_defaults(func=_command_suite)
     return parser
 
 
