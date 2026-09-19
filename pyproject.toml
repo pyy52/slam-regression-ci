@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slam-regression-ci"
-version = "0.1.1"
+version = "0.2.0"
 description = "Lightweight CI regression gate for SLAM & odometry trajectories: ATE/RPE thresholds with Markdown + JSON reports"
 readme = "README.md"
 requires-python = ">=3.8"
