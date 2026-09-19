@@ -66,6 +66,8 @@ def _format_rules(comparison) -> str:
         parts.append(f"Δ≤{comparison.absolute_budget:.6g} m")
     if comparison.max_value is not None:
         parts.append(f"≤{comparison.max_value:.6g} m")
+    if comparison.max_mad_multiples is not None and comparison.mad_budget is not None:
+        parts.append(f"median+{comparison.max_mad_multiples:g}·MAD≤{comparison.mad_budget:.6g} m")
     return " / ".join(parts) if parts else "-"
 
 

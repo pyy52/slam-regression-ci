@@ -33,6 +33,8 @@ class MetricComparison:
     max_value: Optional[float]
     passed: bool
     note: Optional[str] = None
+    max_mad_multiples: Optional[float] = None
+    mad_budget: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -44,6 +46,8 @@ class MetricComparison:
             "absolute_budget": self.absolute_budget,
             "absolute_excess": self.absolute_excess,
             "max_value": self.max_value,
+            "max_mad_multiples": self.max_mad_multiples,
+            "mad_budget": self.mad_budget,
             "passed": self.passed,
             "note": self.note,
         }
@@ -71,8 +75,12 @@ class ComparisonResult:
 
 def _rule_notes(threshold) -> List[str]:
     notes = []
-    if threshold.max_relative_regression_percent is None and \
-            threshold.max_absolute_regression is None and threshold.max_value is None:
+    if (
+        threshold.max_relative_regression_percent is None
+        and threshold.max_absolute_regression is None
+        and threshold.max_value is None
+        and threshold.max_mad_multiples is None
+    ):
         notes.append("no threshold configured; metric reported without gating")
     return notes
 
@@ -182,12 +190,13 @@ def compare_metric_distribution(
     if threshold.max_value is not None and candidate > threshold.max_value:
         failures.append(f"candidate value {candidate:.6f} m exceeds ceiling {threshold.max_value:.6f} m")
 
+    mad_budget: Optional[float] = None
     if threshold.max_mad_multiples is not None:
-        robust_budget = median + threshold.max_mad_multiples * mad
-        if candidate > robust_budget:
+        mad_budget = median + threshold.max_mad_multiples * mad
+        if candidate > mad_budget:
             failures.append(
                 f"candidate exceeds median + {threshold.max_mad_multiples:g} MAD "
-                f"({robust_budget:.6f} m)"
+                f"({mad_budget:.6f} m)"
             )
 
     passed = relative_ok and not failures
@@ -200,6 +209,8 @@ def compare_metric_distribution(
         absolute_budget=threshold.max_absolute_regression,
         absolute_excess=absolute_excess,
         max_value=threshold.max_value,
+        max_mad_multiples=threshold.max_mad_multiples,
+        mad_budget=mad_budget,
         passed=passed,
         note="; ".join(failures) if failures else ("; ".join(_rule_notes(threshold)) or None),
     )

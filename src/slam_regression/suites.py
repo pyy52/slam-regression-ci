@@ -23,6 +23,7 @@ fail. Reports order failed sequences by their worst metric regression first.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -51,6 +52,13 @@ class SuitePolicy:
 class SuiteConfig:
     sequences: List[SequenceSpec] = field(default_factory=list)
     policy: SuitePolicy = field(default_factory=SuitePolicy)
+    base_dir: str = "."
+
+    def resolve(self, path: str) -> str:
+        """Absolute paths pass through; relative paths resolve against the suite file."""
+        if os.path.isabs(path):
+            return path
+        return os.path.join(self.base_dir, path)
 
 
 def _parse_sequence(raw: object, index: int) -> SequenceSpec:
@@ -126,4 +134,6 @@ def load_suite_config(path: str) -> SuiteConfig:
             raw = yaml.safe_load(handle)
         except yaml.YAMLError as exc:
             raise ConfigError(f"invalid YAML in '{path}': {exc}") from None
-    return suite_config_from_dict(raw)
+    config = suite_config_from_dict(raw)
+    config.base_dir = os.path.dirname(os.path.abspath(path))
+    return config
