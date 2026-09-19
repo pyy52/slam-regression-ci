@@ -79,6 +79,13 @@ def main() -> int:
         default=["examples/baseline.tum", "examples/candidate_degraded.tum"],
         help="estimate trajectories to check",
     )
+    parser.add_argument(
+        "--max-selection-drift",
+        type=float,
+        default=0.01,
+        help="metric tolerance when pair selection order differs from evo's "
+        "(same count, different nearest-side choices); default: 1%%",
+    )
     args = parser.parse_args()
 
     print("{:<28} {:>14} {:>14} {:>12}".format("trajectory", "ours", "evo", "rel. diff"))
@@ -91,33 +98,50 @@ def main() -> int:
             print("error: evo is not installed; run: pip install evo", file=sys.stderr)
             return 2
 
-        # Association parity. Note: our association is one-to-one (each estimate
-        # pose is used at most once, like the original TUM benchmark script),
-        # while evo's matching_time_indices allows many reference poses to share
-        # one estimate pose. For dense, matched-rate trajectories both agree;
-        # for sparse/keyframe estimates they intentionally differ. A hard
-        # failure is only correct when the pair SETS match but metrics don't
-        # (that would be a math bug), so association differences are reported
-        # as info and metric tolerance applies to the matching case.
+        # Association parity, using evo's own calling convention: evo's
+        # associate_trajectories matches the SHORTER trajectory's stamps
+        # against the longer one, so call matching_time_indices the same way.
+        # Our matcher walks the reference side instead; both are one-to-one in
+        # practice on real data (same pair count on fr2_desk ORB keyframes),
+        # but pair selection can differ slightly (nearest from the other
+        # side). So: identical index pairs -> strict metric tolerance;
+        # different pairs with the same count -> bounded tolerance
+        # (--max-selection-drift); anything else is a failure.
         from evo.core import sync as evo_sync
         from evo.tools import file_interface
 
         ref_traj = file_interface.read_tum_trajectory_file(args.reference)
         est_traj = file_interface.read_tum_trajectory_file(estimate_path)
-        evo_ri, evo_ei = evo_sync.matching_time_indices(
-            ref_traj.timestamps, est_traj.timestamps, max_diff=0.01
-        )
+        if len(est_traj.timestamps) <= len(ref_traj.timestamps):
+            evo_ri, evo_ei = evo_sync.matching_time_indices(
+                est_traj.timestamps, ref_traj.timestamps, max_diff=0.01
+            )
+            evo_pairs = sorted(zip(evo_ei, evo_ri))
+        else:
+            evo_ri, evo_ei = evo_sync.matching_time_indices(
+                ref_traj.timestamps, est_traj.timestamps, max_diff=0.01
+            )
+            evo_pairs = sorted(zip(evo_ri, evo_ei))
         from slam_regression.trajectories import associate
 
         my_ri, my_ei = associate(ref_traj.timestamps, est_traj.timestamps, 0.01)
-        associations_match = list(my_ri) == list(evo_ri) and list(my_ei) == list(evo_ei)
+        my_pairs = sorted(zip(my_ri, my_ei))
+        associations_match = my_pairs == evo_pairs
+        counts_match = len(my_pairs) == len(evo_pairs)
         if associations_match:
-            print(f"{estimate_path.split('/')[-1]}: association {len(my_ri)} pairs  ok")
-        else:
+            print(f"{estimate_path.split('/')[-1]}: association {len(my_pairs)} pairs  ok")
+        elif counts_match:
             print(
-                f"{estimate_path.split('/')[-1]}: association info — ours {len(my_ri)} pairs "
-                f"(one-to-one) vs evo {len(evo_ei)} pairs (many-to-one); expected for "
-                f"sparse/keyframe estimates, metrics below use different pair sets",
+                f"{estimate_path.split('/')[-1]}: association info — {len(my_pairs)} pairs "
+                f"on both sides, different selection order (reference-side vs "
+                f"estimate-side nearest); bounded metric tolerance applies",
+                file=sys.stderr,
+            )
+        else:
+            failed = True
+            print(
+                f"association MISMATCH vs evo for {estimate_path}: "
+                f"ours {len(my_pairs)} pairs vs evo {len(evo_pairs)} pairs",
                 file=sys.stderr,
             )
 
@@ -129,8 +153,11 @@ def main() -> int:
                 status = "ok" if rel_diff <= REL_TOLERANCE else "MISMATCH"
                 if rel_diff > REL_TOLERANCE:
                     failed = True
+            elif counts_match and rel_diff <= args.max_selection_drift:
+                status = "ok (selection-order difference)"
             else:
-                status = "info (different pair sets)"
+                status = "MISMATCH"
+                failed = True
             print(
                 "{:<28} {:>14.9f} {:>14.9f} {:>11.2e} {}".format(
                     "{}:{}".format(estimate_path.split("/")[-1], metric.split("_")[0]),
