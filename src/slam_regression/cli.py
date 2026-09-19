@@ -27,6 +27,7 @@ from .report import METRIC_KEYS, METRIC_LABELS, ReportContext, render_markdown
 from .trajectories import associate_trajectories, load_tum
 
 BASELINE_SCHEMA = "slam-regression-baseline/v1"
+BASELINE_SCHEMA_MULTI = "slam-regression-baseline/v2"
 REPORT_SCHEMA = "slam-regression-report/v1"
 
 
@@ -46,6 +47,33 @@ def _input_hashes(reference_path: str, estimate_path: str) -> dict:
     return {
         "reference": {"path": os.path.basename(reference_path), "sha256": _sha256(reference_path)},
         "estimate": {"path": os.path.basename(estimate_path), "sha256": _sha256(estimate_path)},
+    }
+
+
+def _flatten_estimates(groups: List[List[str]]) -> List[str]:
+    """`--estimate` uses append+nargs to accept both `--e a b` and repeated flags."""
+    return [item for group in groups for item in group]
+
+
+def _metric_stats(values: List[float]) -> dict:
+    """Robust distribution stats for one metric over N runs."""
+    if not values:
+        raise ConfigError("cannot compute stats for an empty run list")
+    ordered = sorted(values)
+    n = len(ordered)
+    median = ordered[n // 2] if n % 2 else 0.5 * (ordered[n // 2 - 1] + ordered[n // 2])
+    deviations = sorted(abs(v - median) for v in values)
+    mad = deviations[n // 2] if n % 2 else 0.5 * (deviations[n // 2 - 1] + deviations[n // 2])
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    return {
+        "n": n,
+        "median": median,
+        "mad": mad,
+        "mean": mean,
+        "std": variance ** 0.5,
+        "min": ordered[0],
+        "max": ordered[-1],
     }
 
 
@@ -125,17 +153,29 @@ def _load_baseline(path: str) -> dict:
         raise ConfigError(f"cannot read baseline file '{path}': {exc.strerror or exc}") from None
     except json.JSONDecodeError as exc:
         raise ConfigError(f"baseline file '{path}' is not valid JSON: {exc}") from None
-    if not isinstance(baseline, dict) or baseline.get("schema") != BASELINE_SCHEMA:
+    schema = baseline.get("schema") if isinstance(baseline, dict) else None
+    if schema not in (BASELINE_SCHEMA, BASELINE_SCHEMA_MULTI):
         raise ConfigError(
-            f"'{path}' is not a {BASELINE_SCHEMA} baseline file; generate one with 'slam-regression record'"
+            f"'{path}' is not a {BASELINE_SCHEMA} or {BASELINE_SCHEMA_MULTI} baseline file; "
+            f"generate one with 'slam-regression record'"
         )
     metrics = baseline.get("metrics")
     if not isinstance(metrics, dict) or not metrics:
         raise ConfigError(f"baseline file '{path}' contains no metrics")
+    schema = baseline.get("schema")
     for key in ("ate_rmse", "rpe_translation_rmse"):
         value = metrics.get(key)
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        if schema == BASELINE_SCHEMA_MULTI:
+            if not isinstance(value, dict) or not isinstance(value.get("median"), (int, float)):
+                raise ConfigError(
+                    f"baseline file '{path}' has invalid distribution stats for '{key}'"
+                )
+        elif not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
             raise ConfigError(f"baseline file '{path}' has invalid metric '{key}'")
+    if schema == BASELINE_SCHEMA_MULTI:
+        runs = baseline.get("runs")
+        if not isinstance(runs, dict) or not all(isinstance(v, list) for v in runs.values()):
+            raise ConfigError(f"baseline file '{path}' has no per-run metric values")
     return baseline
 
 
@@ -185,28 +225,65 @@ def _print_comparisons(result: ComparisonResult) -> None:
 
 def _command_record(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    metrics, coverage = _compute_with_coverage(config, args.reference, args.estimate)
-    payload = {
-        "schema": BASELINE_SCHEMA,
-        "tool_version": __version__,
-        "created_utc": _utc_now_iso(),
-        "metrics": {key: metrics[key] for key in METRIC_KEYS},
-        "num_pairs": metrics["num_pairs"],
-        "coverage": coverage,
-        "settings": _settings_dict(config),
-        "inputs": {
-            "reference": os.path.basename(args.reference),
-            "estimate": os.path.basename(args.estimate),
-        },
-        "input_hashes": _input_hashes(args.reference, args.estimate),
-        "config_sha256": _sha256(args.config) if args.config else None,
-    }
-    _write_json(args.json, payload)
-    print(
-        "baseline recorded: ate_rmse={:.6f} m, rpe_translation_rmse={:.6f} m ({} pairs) -> {}".format(
-            metrics["ate_rmse"], metrics["rpe_translation_rmse"], metrics["num_pairs"], args.json
+    estimates = _flatten_estimates(args.estimate)
+    per_run = [_compute_with_coverage(config, args.reference, estimate) for estimate in estimates]
+    metric_runs = {key: [metrics[key] for metrics, _ in per_run] for key in METRIC_KEYS}
+    reference_hash = {"path": os.path.basename(args.reference), "sha256": _sha256(args.reference)}
+
+    if len(estimates) == 1:
+        metrics, coverage = per_run[0]
+        payload = {
+            "schema": BASELINE_SCHEMA,
+            "tool_version": __version__,
+            "created_utc": _utc_now_iso(),
+            "metrics": {key: metrics[key] for key in METRIC_KEYS},
+            "num_pairs": metrics["num_pairs"],
+            "coverage": coverage,
+            "settings": _settings_dict(config),
+            "inputs": {
+                "reference": os.path.basename(args.reference),
+                "estimate": os.path.basename(estimates[0]),
+            },
+            "input_hashes": {
+                "reference": reference_hash,
+                "estimate": _input_hashes(args.reference, estimates[0])["estimate"],
+            },
+            "config_sha256": _sha256(args.config) if args.config else None,
+        }
+        summary = "ate_rmse={:.6f} m, rpe_translation_rmse={:.6f} m ({} pairs)".format(
+            metrics["ate_rmse"], metrics["rpe_translation_rmse"], metrics["num_pairs"]
         )
-    )
+    else:
+        stats = {key: _metric_stats(values) for key, values in metric_runs.items()}
+        payload = {
+            "schema": BASELINE_SCHEMA_MULTI,
+            "tool_version": __version__,
+            "created_utc": _utc_now_iso(),
+            "runs": metric_runs,
+            "metrics": stats,
+            "num_pairs": [metrics["num_pairs"] for metrics, _ in per_run],
+            "coverage": [coverage for _, coverage in per_run],
+            "settings": _settings_dict(config),
+            "inputs": {
+                "reference": os.path.basename(args.reference),
+                "estimates": [os.path.basename(estimate) for estimate in estimates],
+            },
+            "input_hashes": {
+                "reference": reference_hash,
+                "estimates": [
+                    {"path": os.path.basename(estimate), "sha256": _sha256(estimate)}
+                    for estimate in estimates
+                ],
+            },
+            "config_sha256": _sha256(args.config) if args.config else None,
+        }
+        summary = "{} runs: ate_rmse median={:.6f}+/-{:.6f} m (MAD), rpe median={:.6f}+/-{:.6f} m".format(
+            len(estimates),
+            stats["ate_rmse"]["median"], stats["ate_rmse"]["mad"],
+            stats["rpe_translation_rmse"]["median"], stats["rpe_translation_rmse"]["mad"],
+        )
+    _write_json(args.json, payload)
+    print(f"baseline recorded: {summary} -> {args.json}")
     return 0
 
 
@@ -277,32 +354,76 @@ def _check_baseline_compatibility(
     return warnings
 
 
+def _load_baseline_metrics(baseline: dict) -> tuple:
+    """Return (single-value metrics, optional distributions) for either schema."""
+    schema = baseline.get("schema")
+    if schema == BASELINE_SCHEMA_MULTI:
+        stats = baseline["metrics"]
+        distributions = stats
+        medians = {}
+        for name, block in stats.items():
+            if not isinstance(block, dict) or "median" not in block:
+                raise ConfigError(f"baseline v2 metric '{name}' has no median block")
+            medians[name] = block["median"]
+        return medians, distributions
+    return baseline["metrics"], None
+
+
 def _command_compare(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     baseline = _load_baseline(args.baseline)
     provenance_warnings = _check_baseline_compatibility(
         baseline, config, args.reference, args.allow_incompatible_baseline
     )
+    baseline_metrics, baseline_distributions = _load_baseline_metrics(baseline)
 
-    candidate_metrics, coverage_info = _compute_with_coverage(config, args.reference, args.estimate)
-    candidate_values = {key: candidate_metrics[key] for key in METRIC_KEYS}
+    estimates = _flatten_estimates(args.estimate)
+    per_run = [_compute_with_coverage(config, args.reference, estimate) for estimate in estimates]
+    metric_runs = {key: [metrics[key] for metrics, _ in per_run] for key in METRIC_KEYS}
+    multi_candidate = len(estimates) > 1
+    if multi_candidate:
+        candidate_stats = {key: _metric_stats(values) for key, values in metric_runs.items()}
+        candidate_values = {key: stats["median"] for key, stats in candidate_stats.items()}
+        candidate_metrics = per_run[len(estimates) // 2][0]  # representative run for num_pairs
+        coverage_infos = [coverage for _, coverage in per_run]
+    else:
+        candidate_metrics = per_run[0][0]
+        candidate_values = {key: candidate_metrics[key] for key in METRIC_KEYS}
+        candidate_stats = None
+        coverage_infos = [per_run[0][1]]
 
     result = evaluate(
-        baseline_metrics=baseline["metrics"],
+        baseline_metrics=baseline_metrics,
         candidate_metrics=candidate_values,
         metric_names=config.metric_names,
         thresholds=config.metrics,
+        baseline_distributions=baseline_distributions,
     )
     result.warnings.extend(provenance_warnings)
-    result.coverage = _evaluate_coverage(coverage_info, config.coverage)
+
+    # Coverage gates: conservative across runs (worst ratio must pass).
+    gated = [
+        _evaluate_coverage(coverage, config.coverage) for coverage in coverage_infos
+    ]
+    worst = min(gated, key=lambda c: (c["matched_pose_ratio"] or 0.0, c["time_coverage_ratio"] or 0.0))
+    result.coverage = worst
     if not result.coverage["passed"]:
         result.passed = False
 
     inputs = {
         "reference": os.path.basename(args.reference),
-        "estimate": os.path.basename(args.estimate),
+        "estimate": (
+            os.path.basename(estimates[0])
+            if len(estimates) == 1
+            else [os.path.basename(estimate) for estimate in estimates]
+        ),
     }
     settings = _settings_dict(config)
+    baseline_runs = None
+    if baseline_distributions:
+        first = next(iter(baseline_distributions.values()), None)
+        if isinstance(first, dict) and "n" in first:
+            baseline_runs = int(first["n"])
     context = ReportContext(
         tool_version=__version__,
         created_utc=_utc_now_iso(),
@@ -311,6 +432,8 @@ def _command_compare(args: argparse.Namespace) -> int:
         settings=settings,
         candidate_num_pairs=candidate_metrics["num_pairs"],
         warnings=list(result.warnings),
+        baseline_runs=baseline_runs,
+        candidate_runs=len(estimates) if multi_candidate else None,
     )
     payload = {
         "schema": REPORT_SCHEMA,
@@ -323,6 +446,8 @@ def _command_compare(args: argparse.Namespace) -> int:
         "candidate": {
             "metrics": candidate_values,
             "num_pairs": candidate_metrics["num_pairs"],
+            "runs": candidate_stats,
+            "count": len(estimates),
         },
         "coverage": result.coverage,
         "baseline_file": context.baseline_file,
@@ -351,7 +476,15 @@ def build_parser() -> argparse.ArgumentParser:
         "record", help="compute metrics for one estimate and store them as a baseline JSON"
     )
     record.add_argument("--reference", required=True, help="ground-truth trajectory (TUM format)")
-    record.add_argument("--estimate", required=True, help="baseline estimate trajectory (TUM format)")
+    record.add_argument(
+        "--estimate",
+        required=True,
+        nargs="+",
+        action="append",
+        metavar="ESTIMATE",
+        help="baseline estimate trajectory (TUM format); pass several (or repeat the "
+        "flag) to record a multi-run baseline (schema v2 with median/MAD stats)",
+    )
     record.add_argument("--json", required=True, help="output path for the baseline JSON")
     record.add_argument("--config", default=None, help="YAML config (defaults are used if omitted)")
     record.set_defaults(func=_command_record)
@@ -361,7 +494,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("--baseline", required=True, help="baseline JSON from 'slam-regression record'")
     compare.add_argument("--reference", required=True, help="ground-truth trajectory (TUM format)")
-    compare.add_argument("--estimate", required=True, help="candidate estimate trajectory (TUM format)")
+    compare.add_argument(
+        "--estimate",
+        required=True,
+        nargs="+",
+        action="append",
+        metavar="ESTIMATE",
+        help="candidate estimate trajectory (TUM format); pass several (or repeat the "
+        "flag) to compare the median of repeated runs (robust against single-run noise)",
+    )
     compare.add_argument("--config", default=None, help="YAML config (defaults are used if omitted)")
     compare.add_argument("--json", default=None, help="write a JSON report to this path")
     compare.add_argument("--report", default=None, help="write a Markdown report to this path")

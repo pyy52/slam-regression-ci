@@ -13,6 +13,9 @@ metrics:
     max_absolute_regression: 0.03
     # Absolute ceiling on the metric value itself.
     # max_value: 0.25
+    # Robust gate for multi-run baselines (recorded with several --estimate
+    # runs): fail if the candidate exceeds median + k * MAD of those runs.
+    # max_mad_multiples: 3
 
   rpe_translation_rmse:
     max_relative_regression_percent: 10
