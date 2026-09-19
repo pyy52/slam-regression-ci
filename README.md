@@ -112,26 +112,37 @@ Exit codes: `0` pass, `1` regression, `2` input/config error.
 
 ```yaml
 metrics:
-  # Relative increase over baseline allowed before failing, in percent.
-  # Improvements (negative change) always pass. 0 rejects any increase.
+  # A metric fails when ANY configured rule is exceeded, so configure only
+  # the rules you want. Improvements always pass relative/absolute rules.
   ate_rmse:
-    max_relative_regression_percent: 10
+    max_relative_regression_percent: 10   # relative increase over baseline
+    max_absolute_regression: 0.03         # ...and at most 3 cm in absolute terms
+    # max_value: 0.25                     # absolute ceiling on the value itself
   rpe_translation_rmse:
     max_relative_regression_percent: 10
 
 association:
-  max_timestamp_diff: 0.01   # seconds between paired poses
+  max_timestamp_diff: 0.01   # seconds; each ref pose matches its NEAREST est pose
 
 alignment:
   enabled: true              # Umeyama alignment of estimate to reference
   correct_scale: false       # also estimate a uniform scale (monocular)
+
+coverage:
+  # Optional gates on how much of the reference the candidate tracks
+  # (catches early tracking loss that would otherwise look like a good ATE).
+  min_matched_pose_ratio: 0.95
+  min_time_coverage_ratio: 0.95
 
 rpe_delta: 1                 # frame gap for the relative pose error
 ```
 
 Every key is optional: omitting `metrics` keeps the default gates, omitting
 the whole file uses defaults for everything. Unknown keys and values are
-rejected with actionable error messages.
+rejected with actionable error messages. Baselines record sha256 fingerprints
+of their inputs; comparing against a changed ground-truth file or with
+different metric-semantic settings is a hard error unless
+`--allow-incompatible-baseline` is given.
 
 ## Use it as a CI gate in your repository
 

@@ -1,7 +1,7 @@
 {
   "schema": "slam-regression-baseline/v1",
   "tool_version": "0.1.0",
-  "created_utc": "2026-09-18T16:20:13Z",
+  "created_utc": "2026-09-19T02:59:24Z",
   "metrics": {
     "ate_rmse": 0.017247338943511374,
     "ate_mean": 0.01580821601908349,
@@ -11,6 +11,12 @@
     "rpe_max": 0.0574544681520816
   },
   "num_pairs": 200,
+  "coverage": {
+    "matched_pose_count": 200,
+    "reference_pose_count": 200,
+    "matched_pose_ratio": 1.0,
+    "time_coverage_ratio": 1.0
+  },
   "settings": {
     "association": {
       "max_timestamp_diff": 0.01
@@ -24,5 +30,16 @@
   "inputs": {
     "reference": "reference.tum",
     "estimate": "baseline.tum"
-  }
+  },
+  "input_hashes": {
+    "reference": {
+      "path": "reference.tum",
+      "sha256": "7fce30c6d1a01fe0b435f5fc2b9074099049594fe869b64672c36d6a9c9acf08"
+    },
+    "estimate": {
+      "path": "baseline.tum",
+      "sha256": "5766c72ae2c1fad99cda18569aa7ad869918d92f1ed8b770542616125938ed12"
+    }
+  },
+  "config_sha256": null
 }

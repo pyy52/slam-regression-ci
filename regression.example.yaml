@@ -2,17 +2,25 @@
 # Copy to regression.yaml and adjust; every key shown here is optional.
 
 metrics:
-  # Maximum allowed relative increase over the recorded baseline, in percent.
-  # A candidate passes when (candidate - baseline) / baseline <= threshold.
-  # Negative changes (improvements) always pass. Use 0 to reject any increase.
+  # Each metric fails when ANY of its configured rules is exceeded, so
+  # configure only the rules you want. Improvements always pass relative
+  # and absolute rules; max_value is an absolute ceiling.
   ate_rmse:
+    # Candidate may exceed the baseline by at most 10% (relative).
     max_relative_regression_percent: 10
+    # ...and by at most 3 cm in absolute terms (robust for tiny or huge
+    # baselines where percent alone is misleading).
+    max_absolute_regression: 0.03
+    # Absolute ceiling on the metric value itself.
+    # max_value: 0.25
 
   rpe_translation_rmse:
     max_relative_regression_percent: 10
 
 association:
-  # Poses whose timestamps differ by more than this (seconds) are not paired.
+  # Poses whose timestamps differ by more than this (seconds) are not paired;
+  # each reference pose is matched to the NEAREST estimate pose within this
+  # tolerance.
   max_timestamp_diff: 0.01
 
 alignment:
@@ -20,6 +28,13 @@ alignment:
   # correct_scale additionally estimates a uniform scale (monocular use case).
   enabled: true
   correct_scale: false
+
+coverage:
+  # Gate on how much of the reference the candidate actually tracks. A
+  # candidate that loses tracking early can look good on ATE while having
+  # failed; these ratios catch that. Both keys are optional.
+  # min_matched_pose_ratio: 0.95
+  # min_time_coverage_ratio: 0.95
 
 # Frame gap used for the relative pose error (1 = consecutive poses).
 rpe_delta: 1

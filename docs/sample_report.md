@@ -2,7 +2,7 @@
 
 **Verdict: FAIL**
 
-Generated 2026-09-19T00:54:48Z by slam-regression 0.1.0
+Generated 2026-09-19T02:59:24Z by slam-regression 0.1.0
 
 ## Metric comparison
 
@@ -19,3 +19,5 @@ Generated 2026-09-19T00:54:48Z by slam-regression 0.1.0
 - matched pose pairs: 200
 - alignment: Umeyama (rigid SE(3))
 - association max timestamp diff: 0.01 s
+- coverage: 200/200 poses (1.0000)
+- time coverage: 1.0000

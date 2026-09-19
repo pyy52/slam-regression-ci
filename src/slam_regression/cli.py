@@ -60,7 +60,7 @@ def _settings_dict(config: Config) -> dict:
     }
 
 
-def _compute_for_estimate(config: Config, reference_path: str, estimate_path: str) -> dict:
+def _compute_with_coverage(config: Config, reference_path: str, estimate_path: str) -> tuple:
     reference = load_tum(reference_path)
     estimate = load_tum(estimate_path)
     matched_ref, matched_est = associate_trajectories(
@@ -75,7 +75,46 @@ def _compute_for_estimate(config: Config, reference_path: str, estimate_path: st
         correct_scale=config.alignment.correct_scale,
         rpe_delta=config.rpe_delta,
     )
-    return result.to_dict()
+    reference_span = float(reference.timestamps[-1] - reference.timestamps[0])
+    matched_span = (
+        float(matched_ref.timestamps[-1] - matched_ref.timestamps[0]) if matched_ref.count > 0 else 0.0
+    )
+    coverage = {
+        "matched_pose_count": result.num_pairs,
+        "reference_pose_count": reference.count,
+        "matched_pose_ratio": (result.num_pairs / reference.count) if reference.count else None,
+        "time_coverage_ratio": (matched_span / reference_span) if reference_span > 0 else None,
+    }
+    return result.to_dict(), coverage
+
+
+def _evaluate_coverage(coverage: dict, coverage_config) -> dict:
+    gated = dict(coverage)
+    min_pose_ratio = coverage_config.min_matched_pose_ratio
+    min_time_ratio = coverage_config.min_time_coverage_ratio
+    gated["min_matched_pose_ratio"] = min_pose_ratio
+    gated["min_time_coverage_ratio"] = min_time_ratio
+
+    failures = []
+    pose_ratio = coverage.get("matched_pose_ratio")
+    if min_pose_ratio is not None:
+        if pose_ratio is None or pose_ratio < min_pose_ratio:
+            failures.append(
+                "matched pose ratio {} below minimum {}".format(
+                    "n/a" if pose_ratio is None else f"{pose_ratio:.4f}", min_pose_ratio
+                )
+            )
+    time_ratio = coverage.get("time_coverage_ratio")
+    if min_time_ratio is not None:
+        if time_ratio is None or time_ratio < min_time_ratio:
+            failures.append(
+                "time coverage ratio {} below minimum {}".format(
+                    "n/a" if time_ratio is None else f"{time_ratio:.4f}", min_time_ratio
+                )
+            )
+    gated["passed"] = not failures
+    gated["notes"] = failures
+    return gated
 
 
 def _load_baseline(path: str) -> dict:
@@ -121,8 +160,24 @@ def _print_comparisons(result: ComparisonResult) -> None:
         print(f"  change: {_format_change(comparison.change_percent)}")
         if comparison.threshold_percent is not None:
             print(f"  threshold: {comparison.threshold_percent:+.2f}%")
+        if comparison.absolute_budget is not None:
+            print(f"  absolute budget: {comparison.absolute_budget:.6f} m")
+        if comparison.max_value is not None:
+            print(f"  max value: {comparison.max_value:.6f} m")
         if comparison.note:
             print(f"  note: {comparison.note}")
+    if result.coverage is not None:
+        coverage = result.coverage
+        print(
+            "Coverage: {}/{} poses ({:.4f}), time {:.4f}".format(
+                coverage["matched_pose_count"],
+                coverage["reference_pose_count"],
+                coverage["matched_pose_ratio"] if coverage["matched_pose_ratio"] is not None else 0.0,
+                coverage["time_coverage_ratio"] if coverage["time_coverage_ratio"] is not None else 0.0,
+            )
+        )
+        for note in coverage.get("notes", []):
+            print(f"  coverage gate: {note}")
     print("STATUS: {}".format("PASS" if result.passed else "FAIL"))
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
@@ -130,13 +185,14 @@ def _print_comparisons(result: ComparisonResult) -> None:
 
 def _command_record(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    metrics = _compute_for_estimate(config, args.reference, args.estimate)
+    metrics, coverage = _compute_with_coverage(config, args.reference, args.estimate)
     payload = {
         "schema": BASELINE_SCHEMA,
         "tool_version": __version__,
         "created_utc": _utc_now_iso(),
         "metrics": {key: metrics[key] for key in METRIC_KEYS},
         "num_pairs": metrics["num_pairs"],
+        "coverage": coverage,
         "settings": _settings_dict(config),
         "inputs": {
             "reference": os.path.basename(args.reference),
@@ -228,16 +284,19 @@ def _command_compare(args: argparse.Namespace) -> int:
         baseline, config, args.reference, args.allow_incompatible_baseline
     )
 
-    candidate_metrics = _compute_for_estimate(config, args.reference, args.estimate)
+    candidate_metrics, coverage_info = _compute_with_coverage(config, args.reference, args.estimate)
     candidate_values = {key: candidate_metrics[key] for key in METRIC_KEYS}
 
     result = evaluate(
         baseline_metrics=baseline["metrics"],
         candidate_metrics=candidate_values,
         metric_names=config.metric_names,
-        thresholds={name: rule.max_relative_regression_percent for name, rule in config.metrics.items()},
+        thresholds=config.metrics,
     )
     result.warnings.extend(provenance_warnings)
+    result.coverage = _evaluate_coverage(coverage_info, config.coverage)
+    if not result.coverage["passed"]:
+        result.passed = False
 
     inputs = {
         "reference": os.path.basename(args.reference),
@@ -265,6 +324,7 @@ def _command_compare(args: argparse.Namespace) -> int:
             "metrics": candidate_values,
             "num_pairs": candidate_metrics["num_pairs"],
         },
+        "coverage": result.coverage,
         "baseline_file": context.baseline_file,
         "inputs": inputs,
     }

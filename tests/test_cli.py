@@ -259,6 +259,117 @@ class TestBaselineIntegrity:
         assert "input fingerprints" in capsys.readouterr().err
 
 
+class TestGates:
+    """Coverage gates and absolute threshold policies (end to end)."""
+
+    def test_coverage_gate_fails_on_truncated_candidate(self, env, tmp_path, capsys):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        # Candidate tracks only the first half of the reference timeline.
+        truncated = write_tum(
+            tmp_path / "truncated.tum",
+            line_positions(15, 0.1, fixed_noise(15, 0.02, seed=7)),
+        )
+        config = str(tmp_path / "coverage.yaml")
+        with open(config, "w") as handle:
+            handle.write("coverage:\n  min_matched_pose_ratio: 0.9\n")
+        code = run_compare(
+            baseline_json, env["reference"], truncated, extra=["--config", config]
+        )
+        out = capsys.readouterr().out
+        assert code == 1
+        assert "STATUS: FAIL" in out
+        assert "Coverage: 15/30 poses (0.5000)" in out
+        assert "below minimum 0.9" in out
+
+    def test_no_coverage_gate_by_default_reports_only(self, env, tmp_path, capsys):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        truncated = write_tum(
+            tmp_path / "truncated.tum",
+            line_positions(15, 0.1, fixed_noise(15, 0.02, seed=7)),
+        )
+        code = run_compare(baseline_json, env["reference"], truncated)
+        out = capsys.readouterr().out
+        assert code == 0  # metrics on the matched subset still pass
+        assert "Coverage: 15/30 poses (0.5000)" in out
+        assert "coverage gate" not in out
+
+    def test_coverage_values_in_json_report(self, env, tmp_path):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        truncated = write_tum(
+            tmp_path / "truncated.tum",
+            line_positions(15, 0.1, fixed_noise(15, 0.02, seed=7)),
+        )
+        report_json = str(tmp_path / "report.json")
+        run_compare(
+            baseline_json, env["reference"], truncated, extra=["--json", report_json]
+        )
+        payload = json.load(open(report_json))
+        coverage = payload["coverage"]
+        assert coverage["matched_pose_count"] == 15
+        assert coverage["reference_pose_count"] == 30
+        assert coverage["matched_pose_ratio"] == pytest.approx(0.5)
+        assert coverage["passed"] is True  # no gate configured
+
+    def test_time_coverage_gate(self, env, tmp_path, capsys):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        truncated = write_tum(
+            tmp_path / "truncated.tum",
+            line_positions(15, 0.1, fixed_noise(15, 0.02, seed=7)),
+        )
+        config = str(tmp_path / "timecov.yaml")
+        with open(config, "w") as handle:
+            handle.write("coverage:\n  min_time_coverage_ratio: 0.9\n")
+        code = run_compare(
+            baseline_json, env["reference"], truncated, extra=["--config", config]
+        )
+        assert code == 1
+        assert "time coverage ratio" in capsys.readouterr().out
+
+    def test_absolute_budget_rule(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        config = str(env["tmp"] / "absbudget.yaml")
+        with open(config, "w") as handle:
+            handle.write("metrics:\n  ate_rmse:\n    max_absolute_regression: 0.03\n")
+        code = run_compare(
+            baseline_json, env["reference"], env["degraded"], extra=["--config", config]
+        )
+        assert code == 1
+        assert "absolute budget: 0.030000 m" in capsys.readouterr().out
+
+    def test_ceiling_rule(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        config = str(env["tmp"] / "ceiling.yaml")
+        with open(config, "w") as handle:
+            handle.write("metrics:\n  ate_rmse:\n    max_value: 0.05\n")
+        code = run_compare(
+            baseline_json, env["reference"], env["degraded"], extra=["--config", config]
+        )
+        assert code == 1
+        assert "max value: 0.050000 m" in capsys.readouterr().out
+
+    def test_absolute_rules_pass_on_good_candidate(self, env, tmp_path):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        config = str(tmp_path / "strict.yaml")
+        with open(config, "w") as handle:
+            handle.write(
+                "metrics:\n  ate_rmse:\n    max_absolute_regression: 0.03\n    max_value: 0.05\n"
+            )
+        similar = write_tum(
+            env["tmp"] / "similar.tum", line_positions(30, 0.1, fixed_noise(30, 0.0205, seed=9))
+        )
+        code = run_compare(
+            baseline_json, env["reference"], similar, extra=["--config", config]
+        )
+        assert code == 0
+
+
 class TestVersion:
     def test_version_flag(self, capsys):
         with pytest.raises(SystemExit) as excinfo:
