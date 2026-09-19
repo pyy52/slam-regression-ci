@@ -158,16 +158,105 @@ class TestCompare:
         assert code == 2
         assert "unknown configuration key" in capsys.readouterr().err
 
-    def test_alignment_mismatch_warns_but_completes(self, env, capsys):
+    def test_alignment_mismatch_is_strict_error(self, env, capsys):
         baseline_json = str(env["tmp"] / "baseline_noalign.json")
         config = str(env["tmp"] / "noalign.yaml")
         with open(config, "w") as handle:
             handle.write("alignment:\n  enabled: false\n")
         assert run_record(env["reference"], env["baseline_est"], baseline_json, config=config) == 0
         code = run_compare(baseline_json, env["reference"], env["baseline_est"])
+        assert code == 2
+        assert "not comparable" in capsys.readouterr().err
+
+    def test_alignment_mismatch_override_allows_run(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline_noalign.json")
+        config = str(env["tmp"] / "noalign.yaml")
+        with open(config, "w") as handle:
+            handle.write("alignment:\n  enabled: false\n")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json, config=config) == 0
+        code = run_compare(
+            baseline_json,
+            env["reference"],
+            env["baseline_est"],
+            extra=["--allow-incompatible-baseline"],
+        )
         assert code == 0
-        err = capsys.readouterr().err
-        assert "different alignment settings" in err
+        assert "incompatible baseline override" in capsys.readouterr().err
+
+
+class TestBaselineIntegrity:
+    def test_record_stores_input_fingerprints(self, env):
+        out = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], out) == 0
+        payload = json.load(open(out))
+        assert payload["input_hashes"]["reference"]["path"] == "reference.tum"
+        assert len(payload["input_hashes"]["reference"]["sha256"]) == 64
+        assert payload["config_sha256"] is None
+
+    def test_record_with_config_stores_config_hash(self, env):
+        config = str(env["tmp"] / "cfg.yaml")
+        with open(config, "w") as handle:
+            handle.write("metrics:\n  ate_rmse:\n    max_relative_regression_percent: 5\n")
+        out = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], out, config=config) == 0
+        assert len(json.load(open(out))["config_sha256"]) == 64
+
+    def test_modified_reference_rejected(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        # Same filename, different content: the old silent-comparison hazard.
+        with open(env["reference"], "a") as handle:
+            handle.write("99.0 0 0 0 0 0 0 1\n")
+        code = run_compare(baseline_json, env["reference"], env["baseline_est"])
+        assert code == 2
+        assert "sha256 mismatch" in capsys.readouterr().err
+
+    def test_modified_reference_override_warns_and_completes(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        with open(env["reference"], "a") as handle:
+            handle.write("99.0 0 0 0 0 0 0 1\n")
+        code = run_compare(
+            baseline_json, env["reference"], env["baseline_est"],
+            extra=["--allow-incompatible-baseline"],
+        )
+        assert code == 0
+        assert "sha256 mismatch" in capsys.readouterr().err
+
+    def test_rpe_delta_mismatch_rejected(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        config = str(env["tmp"] / "delta.yaml")
+        with open(config, "w") as handle:
+            handle.write("rpe_delta: 5\n")
+        code = run_compare(
+            baseline_json, env["reference"], env["baseline_est"], extra=["--config", config]
+        )
+        assert code == 2
+        assert "rpe_delta" in capsys.readouterr().err
+
+    def test_max_timestamp_diff_mismatch_rejected(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        config = str(env["tmp"] / "assoc.yaml")
+        with open(config, "w") as handle:
+            handle.write("association:\n  max_timestamp_diff: 0.02\n")
+        code = run_compare(
+            baseline_json, env["reference"], env["baseline_est"], extra=["--config", config]
+        )
+        assert code == 2
+        assert "max_timestamp_diff" in capsys.readouterr().err
+
+    def test_legacy_baseline_without_fingerprints_warns_but_works(self, env, capsys):
+        baseline_json = str(env["tmp"] / "baseline.json")
+        assert run_record(env["reference"], env["baseline_est"], baseline_json) == 0
+        payload = json.load(open(baseline_json))
+        del payload["input_hashes"]  # simulate a v0.1.0 baseline
+        with open(baseline_json, "w") as handle:
+            json.dump(payload, handle)
+        code = run_compare(baseline_json, env["reference"], env["baseline_est"])
+        assert code == 0
+        assert "input fingerprints" in capsys.readouterr().err
 
 
 class TestVersion:

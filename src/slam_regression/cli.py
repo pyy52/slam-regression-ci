@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import sys
@@ -31,6 +32,21 @@ REPORT_SCHEMA = "slam-regression-report/v1"
 
 def _utc_now_iso() -> str:
     return datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _input_hashes(reference_path: str, estimate_path: str) -> dict:
+    return {
+        "reference": {"path": os.path.basename(reference_path), "sha256": _sha256(reference_path)},
+        "estimate": {"path": os.path.basename(estimate_path), "sha256": _sha256(estimate_path)},
+    }
 
 
 def _settings_dict(config: Config) -> dict:
@@ -126,6 +142,8 @@ def _command_record(args: argparse.Namespace) -> int:
             "reference": os.path.basename(args.reference),
             "estimate": os.path.basename(args.estimate),
         },
+        "input_hashes": _input_hashes(args.reference, args.estimate),
+        "config_sha256": _sha256(args.config) if args.config else None,
     }
     _write_json(args.json, payload)
     print(
@@ -136,9 +154,79 @@ def _command_record(args: argparse.Namespace) -> int:
     return 0
 
 
+# Settings that change what the metric numbers mean. A baseline must only be
+# compared against candidates evaluated with identical values.
+_SEMANTIC_SETTINGS = (
+    ("alignment", "enabled"),
+    ("alignment", "correct_scale"),
+    ("association", "max_timestamp_diff"),
+)
+
+
+def _check_baseline_compatibility(
+    baseline: dict, config: Config, reference_path: str, allow_incompatible: bool
+) -> List[str]:
+    """Raise ConfigError on incompatible baselines; return warnings for soft issues."""
+    warnings: List[str] = []
+    detail = (
+        "re-record the baseline or re-run with --allow-incompatible-baseline to override"
+    )
+
+    baseline_settings = baseline.get("settings")
+    if isinstance(baseline_settings, dict):
+        for section, key in _SEMANTIC_SETTINGS:
+            baseline_value = baseline_settings.get(section, {}).get(key)
+            current_value = getattr(getattr(config, section), key)
+            if baseline_value is not None and baseline_value != current_value:
+                message = (
+                    f"baseline was recorded with {section}.{key}={baseline_value!r} "
+                    f"but compare uses {current_value!r}; the metric values are not "
+                    f"comparable. {detail}"
+                )
+                if allow_incompatible:
+                    warnings.append(f"incompatible baseline override: {message}")
+                else:
+                    raise ConfigError(message)
+        baseline_rpe_delta = baseline_settings.get("rpe_delta")
+        if baseline_rpe_delta is not None and baseline_rpe_delta != config.rpe_delta:
+            message = (
+                f"baseline was recorded with rpe_delta={baseline_rpe_delta!r} but compare "
+                f"uses {config.rpe_delta!r}; the metric values are not comparable. {detail}"
+            )
+            if allow_incompatible:
+                warnings.append(f"incompatible baseline override: {message}")
+            else:
+                raise ConfigError(message)
+    else:
+        warnings.append("baseline has no settings block; semantic compatibility cannot be checked")
+
+    input_hashes = baseline.get("input_hashes")
+    if isinstance(input_hashes, dict) and isinstance(input_hashes.get("reference"), dict):
+        recorded = input_hashes["reference"].get("sha256")
+        if recorded and recorded != _sha256(reference_path):
+            message = (
+                f"reference trajectory '{reference_path}' does not match the file the baseline "
+                f"was recorded against (sha256 mismatch); the comparison would mix two "
+                f"different ground truths. {detail}"
+            )
+            if allow_incompatible:
+                warnings.append(f"incompatible baseline override: {message}")
+            else:
+                raise ConfigError(message)
+    else:
+        warnings.append(
+            "baseline was recorded by an older version without input fingerprints; "
+            "reference provenance cannot be verified"
+        )
+    return warnings
+
+
 def _command_compare(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     baseline = _load_baseline(args.baseline)
+    provenance_warnings = _check_baseline_compatibility(
+        baseline, config, args.reference, args.allow_incompatible_baseline
+    )
 
     candidate_metrics = _compute_for_estimate(config, args.reference, args.estimate)
     candidate_values = {key: candidate_metrics[key] for key in METRIC_KEYS}
@@ -149,17 +237,7 @@ def _command_compare(args: argparse.Namespace) -> int:
         metric_names=config.metric_names,
         thresholds={name: rule.max_relative_regression_percent for name, rule in config.metrics.items()},
     )
-
-    baseline_settings = baseline.get("settings")
-    if isinstance(baseline_settings, dict):
-        baseline_alignment = baseline_settings.get("alignment", {})
-        if baseline_alignment.get("enabled") != config.alignment.enabled or baseline_alignment.get(
-            "correct_scale"
-        ) != config.alignment.correct_scale:
-            result.warnings.append(
-                "baseline was recorded with different alignment settings; "
-                "values may not be directly comparable"
-            )
+    result.warnings.extend(provenance_warnings)
 
     inputs = {
         "reference": os.path.basename(args.reference),
@@ -227,6 +305,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--config", default=None, help="YAML config (defaults are used if omitted)")
     compare.add_argument("--json", default=None, help="write a JSON report to this path")
     compare.add_argument("--report", default=None, help="write a Markdown report to this path")
+    compare.add_argument(
+        "--allow-incompatible-baseline",
+        action="store_true",
+        help="override the baseline compatibility checks (semantic settings and "
+        "reference fingerprint); a warning is recorded in the report",
+    )
     compare.set_defaults(func=_command_compare)
     return parser
 

@@ -7,8 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `associate()` now pairs each reference pose with the *nearest* estimate pose
+  within `max_timestamp_diff`; the previous loop could pair with a
+  first-within-tolerance pose that was not the closest (different rates,
+  offsets, or dropped frames silently biased metrics). Association indices
+  are parity-checked against evo in CI.
+
+### Changed
+
+- **Baseline compatibility is now strict.** `compare` exits with code 2 when
+  the baseline was recorded with different metric-semantic settings
+  (`alignment.enabled`, `alignment.correct_scale`, `rpe_delta`,
+  `association.max_timestamp_diff`) or when the reference trajectory's sha256
+  no longer matches the recorded baseline. Use the new
+  `--allow-incompatible-baseline` flag to override explicitly (a warning is
+  recorded in the report). Baselines from v0.1.0 (without fingerprints) still
+  work, with a provenance warning.
+
 ### Added
 
+- Baselines now record sha256 fingerprints of the reference and estimate
+  trajectories and of the config file (`input_hashes`, `config_sha256`),
+  so a silently changed ground-truth file can no longer invalidate a
+  comparison unnoticed.
 - Composite GitHub Action (`action.yml`): downstream repositories can gate
   with `uses: pyy52/slam-regression-ci@v0.1`; exercised in CI via `uses: ./`.
 - PyPI publish workflow (`release.yml`) using Trusted Publishing — no API
