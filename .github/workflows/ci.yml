@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pytest
+      - name: Run tests
+        run: pytest
+      - name: Smoke test - passing example
+        run: |
+          slam-regression record \
+            --reference examples/reference.tum \
+            --estimate examples/baseline.tum \
+            --json /tmp/baseline_metrics.json
+          slam-regression compare \
+            --baseline /tmp/baseline_metrics.json \
+            --reference examples/reference.tum \
+            --estimate examples/baseline.tum \
+            --config examples/regression.yaml \
+            --report /tmp/report.md --json /tmp/report.json
+      - name: Smoke test - degraded example must exit 1
+        run: |
+          set +e
+          slam-regression compare \
+            --baseline /tmp/baseline_metrics.json \
+            --reference examples/reference.tum \
+            --estimate examples/candidate_degraded.tum \
+            --config examples/regression.yaml \
+            --report /tmp/report_bad.md --json /tmp/report_bad.json
+          code=$?
+          set -e
+          test "$code" -eq 1
+          grep -q "Verdict: FAIL" /tmp/report_bad.md
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check .
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f docker/Dockerfile -t slam-regression-ci:ci .
+      - name: Passing example exits 0
+        run: |
+          docker run --rm -v "$PWD/examples:/data" slam-regression-ci:ci compare \
+            --baseline /data/baseline_metrics.json \
+            --reference /data/reference.tum \
+            --estimate /data/baseline.tum \
+            --config /data/regression.yaml
+      - name: Degraded example exits 1
+        run: |
+          set +e
+          docker run --rm -v "$PWD/examples:/data" slam-regression-ci:ci compare \
+            --baseline /data/baseline_metrics.json \
+            --reference /data/reference.tum \
+            --estimate /data/candidate_degraded.tum \
+            --config /data/regression.yaml > /dev/null 2>&1
+          code=$?
+          set -e
+          test "$code" -eq 1
