@@ -119,10 +119,12 @@ def associate(
     est_timestamps: np.ndarray,
     max_diff: float,
 ) -> Tuple[List[int], List[int]]:
-    """Greedy one-to-one nearest-timestamp association (TUM benchmark style).
+    """Greedy one-to-one nearest-timestamp association.
 
-    Both inputs must be sorted ascending. Returns index lists ``(ref_idx, est_idx)``
-    of matched pairs.
+    Both inputs must be sorted ascending. Each reference pose is matched to the
+    nearest remaining estimate pose when that neighbor is within ``max_diff``
+    (inclusive); unmatched poses on either side are dropped. Runs in O(N + M).
+    Returns index lists ``(ref_idx, est_idx)`` of matched pairs.
     """
     if max_diff < 0:
         raise TrajectoryError(f"max_diff must be non-negative, got {max_diff}")
@@ -131,17 +133,32 @@ def associate(
     est_idx: List[int] = []
     i = 0
     j = 0
-    while i < len(ref_timestamps) and j < len(est_timestamps):
-        diff = float(ref_timestamps[i] - est_timestamps[j])
-        if abs(diff) <= max_diff:
-            ref_idx.append(i)
-            est_idx.append(j)
-            i += 1
+    n_ref = len(ref_timestamps)
+    n_est = len(est_timestamps)
+    while i < n_ref and j < n_est:
+        ref_t = float(ref_timestamps[i])
+        diff = ref_t - float(est_timestamps[j])
+        if abs(diff) > max_diff:
+            if diff < 0:
+                # Estimate stamp is ahead and out of reach: ref pose i has no
+                # partner among the remaining (larger) estimate stamps.
+                i += 1
+            else:
+                # Estimate stamp is behind and out of reach for ref i and all
+                # later (larger) ref stamps.
+                j += 1
+            continue
+        # Within tolerance — but if the next estimate stamp is strictly closer
+        # to ref i, the current one is not the nearest match. Skipping it is
+        # safe: later reference stamps are further from it and closer to the
+        # next one.
+        if j + 1 < n_est and abs(float(est_timestamps[j + 1]) - ref_t) < abs(diff):
             j += 1
-        elif diff < 0:
-            i += 1
-        else:
-            j += 1
+            continue
+        ref_idx.append(i)
+        est_idx.append(j)
+        i += 1
+        j += 1
     return ref_idx, est_idx
 
 

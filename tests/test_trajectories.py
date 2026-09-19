@@ -116,6 +116,66 @@ class TestAssociate:
         with pytest.raises(TrajectoryError, match="non-negative"):
             associate([1.0], [1.0], max_diff=-0.1)
 
+    def test_picks_nearest_when_two_candidates_in_tolerance(self):
+        # Audit counterexample: 0.00 is within tolerance of 0.04 but 0.05 is nearer.
+        ri, ei = associate([0.04], [0.00, 0.05], max_diff=0.05)
+        assert ri == [0]
+        assert ei == [1]
+
+    def test_nearest_even_when_far_candidate_comes_first(self):
+        ri, ei = associate([10.0], [9.8, 10.05], max_diff=0.2)
+        assert ei == [1]
+
+    def test_different_rates(self):
+        # 5 Hz reference against 10 Hz estimate.
+        ref = [i * 0.2 for i in range(6)]
+        est = [i * 0.1 for i in range(11)]
+        ri, ei = associate(ref, est, max_diff=0.01)
+        assert [ref[i] for i in ri] == ref
+        assert [est[j] for j in ei] == ref
+
+    def test_timestamp_offset(self):
+        ref = [1.0, 2.0, 3.0]
+        est = [1.0 + 0.008, 2.0 + 0.008, 3.0 + 0.008]
+        ri, ei = associate(ref, est, max_diff=0.01)
+        assert ri == [0, 1, 2]
+        assert ei == [0, 1, 2]
+
+    def test_dropped_poses(self):
+        ref = [1.0, 2.0, 3.0, 4.0]
+        est = [1.0, 3.0, 4.0]  # estimate dropped its 2.0 pose
+        ri, ei = associate(ref, est, max_diff=0.01)
+        assert ri == [0, 2, 3]
+        assert ei == [0, 1, 2]
+
+    def test_near_duplicate_estimate_timestamps(self):
+        # Near-duplicates: keep the first (no strictly closer neighbor).
+        ri, ei = associate([2.0], [2.0, 2.0001], max_diff=0.01)
+        assert ei == [0]
+
+    def test_duplicate_estimate_timestamps_keeps_first(self):
+        ri, ei = associate([2.0], [2.0, 2.0], max_diff=0.01)
+        assert ei == [0]
+
+    def test_boundary_equals_max_diff_is_inclusive(self):
+        # 0.5 is exactly representable, so diff == max_diff holds bit-exactly.
+        ri, ei = associate([1.0], [1.5], max_diff=0.5)
+        assert ri == [0]
+        assert ei == [0]
+
+    def test_just_beyond_boundary_dropped(self):
+        ri, ei = associate([1.0], [1.5001], max_diff=0.5)
+        assert ri == []
+        assert ei == []
+
+    def test_reference_with_gap_matches_across_it(self):
+        # Reference skips 2.0; estimate has poses at all times. The 2.0 estimate
+        # pose must be skipped in favor of the strictly closer 2.9 for ref 2.9.
+        ref = [1.0, 2.9]
+        est = [1.0, 2.0, 2.9]
+        ri, ei = associate(ref, est, max_diff=0.05)
+        assert ei == [0, 2]
+
     def test_associate_trajectories_shapes(self):
         from slam_regression.trajectories import Trajectory
 
