@@ -104,8 +104,12 @@ jobs:
           reference: examples/reference.tum
           estimate: examples/candidate_degraded.tum
           config: examples/regression.yaml
-      - name: Assert degraded case failed, report exists, and job summary has it
+      # Note: $GITHUB_STEP_SUMMARY is a per-step file inside a job — content
+      # written by earlier steps only appears in the run's summary page, not
+      # in later steps' env file. So we assert the report file itself; the
+      # action's summary append is verified on the run page.
+      - name: Assert degraded case failed and report exists
         run: |
           test "${{ steps.degraded.outcome }}" = "failure"
           test -f regression_report.md
-          grep -q "Verdict: FAIL" "$GITHUB_STEP_SUMMARY"
+          grep -q "Verdict: FAIL" regression_report.md
