@@ -169,6 +169,18 @@ Commit the baseline JSON (`baselines/room1_baseline.json`) once, and every
 pull request that makes localization worse will fail — with an attached
 Markdown report explaining exactly which metric moved.
 
+Prefer a one-line action instead? The repository is also a composite action:
+
+```yaml
+      - uses: pyy52/slam-regression-ci@v0.1
+        with:
+          baseline: baselines/room1_baseline.json
+          reference: data/room1_gt.tum
+          estimate: results/room1_est.tum
+```
+
+See what the report looks like before installing: [sample report](docs/sample_report.md).
+
 ## Docker
 
 ```bash
@@ -206,7 +218,8 @@ tool for advanced evaluation; this project deliberately stays minimal.
 
 ## Roadmap
 
-- PyPI package and a reusable GitHub Action (`uses: pyy52/slam-regression-ci`)
+- PyPI package (`slam-regression-ci`) — publish workflow ready, waiting on
+  [Trusted Publishing registration](PUBLISHING.md)
 - KITTI pose file support
 - Additional metrics (RPE with configurable delta units, rotation error)
 - Optional PR comment with the regression summary
