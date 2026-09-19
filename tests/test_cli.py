@@ -35,9 +35,18 @@ def fixed_noise(n, amplitude, seed=7):
     ]
 
 
+def _estimate_args(estimate):
+    """Normalize str-or-list estimate input into repeated --estimate flags."""
+    estimates = estimate if isinstance(estimate, (list, tuple)) else [estimate]
+    args = []
+    for item in estimates:
+        args += ["--estimate", item]
+    return args
+
+
 def run_record(reference, estimate, baseline_json, config=None):
     """Call the record subcommand; returns its exit code."""
-    args = ["record", "--reference", reference, "--estimate", estimate, "--json", baseline_json]
+    args = ["record", "--reference", reference, *_estimate_args(estimate), "--json", baseline_json]
     if config is not None:
         args += ["--config", config]
     return main(args)
@@ -45,7 +54,7 @@ def run_record(reference, estimate, baseline_json, config=None):
 
 def run_compare(baseline_json, reference, estimate, extra=()):
     return main(
-        ["compare", "--baseline", baseline_json, "--reference", reference, "--estimate", estimate, *extra]
+        ["compare", "--baseline", baseline_json, "--reference", reference, *_estimate_args(estimate), *extra]
     )
 
 

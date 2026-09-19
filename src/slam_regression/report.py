@@ -38,6 +38,8 @@ class ReportContext:
     settings: Dict[str, object]
     candidate_num_pairs: int
     warnings: List[str] = field(default_factory=list)
+    baseline_runs: Optional[int] = None
+    candidate_runs: Optional[int] = None
 
 
 def _format_change(change: Optional[float]) -> str:
@@ -110,6 +112,10 @@ def render_markdown(result: ComparisonResult, context: ReportContext) -> str:
     lines.append("- reference: `{}`".format(context.inputs.get("reference", "n/a")))
     lines.append("- estimate: `{}`".format(context.inputs.get("estimate", "n/a")))
     lines.append(f"- matched pose pairs: {context.candidate_num_pairs}")
+    if context.baseline_runs is not None:
+        lines.append(f"- baseline runs: {context.baseline_runs} (baseline column is the median)")
+    if context.candidate_runs is not None:
+        lines.append(f"- candidate runs: {context.candidate_runs} (candidate column is the median)")
     lines.append(f"- alignment: {_format_alignment(context.settings)}")
     lines.append("- association max timestamp diff: {} s".format(
         context.settings.get("association", {}).get("max_timestamp_diff", "n/a")

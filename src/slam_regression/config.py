@@ -34,6 +34,7 @@ METRIC_RULE_KEYS = (
     "max_relative_regression_percent",
     "max_absolute_regression",
     "max_value",
+    "max_mad_multiples",
 )
 KNOWN_TOP_LEVEL_KEYS = ("metrics", "association", "alignment", "rpe_delta", "coverage")
 
@@ -49,11 +50,14 @@ class MetricThreshold:
     - ``max_absolute_regression``: candidate may exceed the baseline by at most
       this absolute amount (meters). Robust when the baseline is tiny or huge.
     - ``max_value``: absolute ceiling on the candidate value itself.
+    - ``max_mad_multiples``: robust gate for multi-run baselines — the
+      candidate may exceed ``median + k * MAD`` of the baseline runs.
     """
 
     max_relative_regression_percent: Optional[float] = None
     max_absolute_regression: Optional[float] = None
     max_value: Optional[float] = None
+    max_mad_multiples: Optional[float] = None
 
     def is_empty(self) -> bool:
         return all(
@@ -166,6 +170,9 @@ def _parse_metrics(raw: Any) -> Dict[str, MetricThreshold]:
             ),
             max_value=_optional_non_negative(
                 rule.get("max_value"), f"metrics.{name}.max_value"
+            ),
+            max_mad_multiples=_optional_non_negative(
+                rule.get("max_mad_multiples"), f"metrics.{name}.max_mad_multiples"
             ),
         )
     return metrics

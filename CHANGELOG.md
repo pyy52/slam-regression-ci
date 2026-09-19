@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-run baselines** (baseline schema v2): `record --estimate a.tum b.tum
+  ...` records per-run metric values plus median/MAD/mean/std; `compare
+  --estimate c1.tum c2.tum` gates the median of repeated candidate runs. New
+  optional robust rule `max_mad_multiples`: fail when the candidate leaves the
+  baseline's natural run-to-run spread (`median + k * MAD`). Single-run v1
+  baselines remain fully supported.
 - Trajectory-coverage gates: `compare` now reports matched pose ratio and
   time coverage ratio against the reference, with optional config gates
   (`coverage.min_matched_pose_ratio`, `coverage.min_time_coverage_ratio`).

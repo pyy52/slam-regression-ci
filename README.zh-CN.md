@@ -72,6 +72,23 @@ slam-regression record \
   --json baselines/room1_baseline.json
 ```
 
+SLAM 流水线往往并非完全确定（RANSAC、多线程、GPU）。记录**多次**运行，
+基线就从单个数字升级为分布：
+
+```bash
+slam-regression record \
+  --reference ground_truth.tum \
+  --estimate run1.tum run2.tum run3.tum \
+  --json baselines/room1_baseline.json    # schema v2：median / MAD / std
+
+# 对比多次候选运行的 median；可选规则：候选超出基线自然波动范围即失败
+slam-regression compare \
+  --baseline baselines/room1_baseline.json \
+  --reference ground_truth.tum \
+  --estimate cand1.tum cand2.tum \
+  --config regression.yaml
+```
+
 之后每次改动都与它对比：
 
 ```bash
@@ -111,6 +128,8 @@ metrics:
     max_relative_regression_percent: 10   # 相对基线的最大增幅（百分比）
     max_absolute_regression: 0.03         # ……且绝对增幅不超过 3 厘米
     # max_value: 0.25                     # 指标本身的绝对上限
+    # max_mad_multiples: 3                # 多次运行基线：候选超出
+    #                                     # median + 3*MAD 即失败
   rpe_translation_rmse:
     max_relative_regression_percent: 10
 

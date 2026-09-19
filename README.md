@@ -79,6 +79,25 @@ slam-regression record \
   --json baselines/room1_baseline.json
 ```
 
+SLAM pipelines are often not fully deterministic (RANSAC, threading, GPUs).
+Record **several** runs and the baseline becomes a distribution instead of a
+single number:
+
+```bash
+slam-regression record \
+  --reference ground_truth.tum \
+  --estimate run1.tum run2.tum run3.tum \
+  --json baselines/room1_baseline.json    # schema v2: median / MAD / std
+
+# Compare the median of repeated candidate runs; optionally fail when the
+# candidate leaves the baseline's natural run-to-run spread:
+slam-regression compare \
+  --baseline baselines/room1_baseline.json \
+  --reference ground_truth.tum \
+  --estimate cand1.tum cand2.tum \
+  --config regression.yaml
+```
+
 Then gate every change against it:
 
 ```bash
@@ -118,6 +137,8 @@ metrics:
     max_relative_regression_percent: 10   # relative increase over baseline
     max_absolute_regression: 0.03         # ...and at most 3 cm in absolute terms
     # max_value: 0.25                     # absolute ceiling on the value itself
+    # max_mad_multiples: 3                # multi-run baselines: fail if beyond
+    #                                     # median + 3*MAD of the recorded runs
   rpe_translation_rmse:
     max_relative_regression_percent: 10
 
