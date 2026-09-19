@@ -217,8 +217,7 @@ ATE/RPE 基于 numpy 实现，遵循 TUM RGB-D benchmark 的约定；CI 会在�
 
 ## Roadmap
 
-- PyPI 包（`slam-regression-ci`）——发布工作流已就绪，等待
-  [Trusted Publishing 登记](PUBLISHING.md)
+- ~~PyPI 包~~ —— [已上架 PyPI](https://pypi.org/project/slam-regression-ci/)
 - KITTI 位姿文件支持
 - 更多指标（可配置 delta 单位的 RPE、旋转误差）
 - 可选的 PR 评论回归摘要
