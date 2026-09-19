@@ -42,7 +42,6 @@ runs:
     - name: Compare candidate against baseline
       shell: bash
       run: |
-        echo "summary-env-debug: GITHUB_STEP_SUMMARY=${GITHUB_STEP_SUMMARY:-<unset>}"
         ARGS=(compare --baseline "${{ inputs.baseline }}" --reference "${{ inputs.reference }}" --estimate "${{ inputs.estimate }}")
         [ -n "${{ inputs.config }}" ] && ARGS+=(--config "${{ inputs.config }}")
         [ -n "${{ inputs.report }}" ] && ARGS+=(--report "${{ inputs.report }}")
