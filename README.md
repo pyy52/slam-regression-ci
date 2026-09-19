@@ -7,10 +7,16 @@ English | [简体中文](README.zh-CN.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](pyproject.toml)
 
-A lightweight regression gate for SLAM & odometry trajectories: compare a
-candidate trajectory against a recorded baseline, apply configurable
-thresholds, and fail CI when localization accuracy got worse — with a
-human-readable Markdown report and a machine-readable JSON report.
+**Variance-aware CI regression gates for SLAM and odometry** — fingerprinted
+baselines, coverage checks, repeated-run statistics, and multi-sequence
+suites. Compare a candidate trajectory against a recorded baseline, apply
+configurable thresholds, and fail CI when localization accuracy got worse —
+with a human-readable Markdown report and a machine-readable JSON report.
+
+evo measures trajectory accuracy; slam-regression-ci decides whether a code
+change caused a meaningful regression. It ships a minimal native TUM evaluator
+(parity-checked against evo; evo remains the richer evaluation and plotting
+tool).
 
 SLAM and odometry code changes can quietly degrade accuracy. Evaluation tools
 like [evo](https://github.com/MichaelGrupp/evo) compute ATE/RPE, but they don't
@@ -36,7 +42,7 @@ Requires Python 3.8+ (works on ROS1 Noetic / Ubuntu 20.04) and only `numpy` +
 `PyYAML` at runtime.
 
 ```bash
-pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.1.0
+pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.2.1
 ```
 
 Or try it without installing:
@@ -183,7 +189,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.1.0
+      - run: pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.2.1
       - name: Check trajectory regression
         run: |
           slam-regression compare \
@@ -233,7 +239,7 @@ slam-regression suite --config suite.yaml --report suite_report.md --json suite_
 Prefer a one-line action instead? The repository is also a composite action:
 
 ```yaml
-      - uses: pyy52/slam-regression-ci@v0.1
+      - uses: pyy52/slam-regression-ci@v0
         with:
           baseline: baselines/room1_baseline.json
           reference: data/room1_gt.tum

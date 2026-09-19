@@ -7,7 +7,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](pyproject.toml)
 
-一个轻量级的 SLAM / 里程计轨迹回归门禁：将候选轨迹与已记录的基线做对比，套用可配置的阈值，当定位精度变差时让 CI 直接失败——同时产出人类可读的 Markdown 报告和机器可读的 JSON 报告。
+**面向 SLAM / 里程计的方差感知 CI 回归门禁**——指纹化基线、coverage 检查、重复运行统计、多序列套件。将候选轨迹与已记录的基线做对比，套用可配置的阈值，当定位精度变差时让 CI 直接失败——同时产出人类可读的 Markdown 报告和机器可读的 JSON 报告。
+
+evo 负责度量轨迹精度；slam-regression-ci 判定一次代码改动是否造成了有意义的回归。工具内置一个极简的 TUM 原生评测器（与 evo 做对拍校验；更丰富的评测与绘图仍推荐 evo）。
 
 SLAM 与里程计代码的改动可能在不知不觉中降低精度。[evo](https://github.com/MichaelGrupp/evo) 这类评测工具能算出 ATE/RPE，但回答不了**"这个 PR 是不是回归？"**。为每个仓库手写这套判定策略既繁琐又容易出错。本工具只做这一件事：
 
@@ -30,7 +32,7 @@ report.md（给人看）+ report.json（给 CI/自动化用）
 与 `PyYAML`。
 
 ```bash
-pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.1.0
+pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.2.1
 ```
 
 或者不安装直接试用：
@@ -171,7 +173,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.1.0
+      - run: pip install git+https://github.com/pyy52/slam-regression-ci.git@v0.2.1
       - name: Check trajectory regression
         run: |
           slam-regression compare \
@@ -216,7 +218,7 @@ slam-regression suite --config suite.yaml --report suite_report.md --json suite_
 也可以用一行 Action（本仓库同时是一个 composite action）：
 
 ```yaml
-      - uses: pyy52/slam-regression-ci@v0.1
+      - uses: pyy52/slam-regression-ci@v0
         with:
           baseline: baselines/room1_baseline.json
           reference: data/room1_gt.tum
