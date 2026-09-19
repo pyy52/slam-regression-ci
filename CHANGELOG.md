@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Composite GitHub Action (`action.yml`): downstream repositories can gate
+  with `uses: pyy52/slam-regression-ci@v0.1`; exercised in CI via `uses: ./`.
+- PyPI publish workflow (`release.yml`) using Trusted Publishing — no API
+  tokens; maintainer registration documented in `PUBLISHING.md`.
+- Committed sample Markdown report (`docs/sample_report.md`).
+
 ## [0.1.0] - 2026-09-18
 
 First usable release: a minimal, dependency-light regression gate for SLAM and

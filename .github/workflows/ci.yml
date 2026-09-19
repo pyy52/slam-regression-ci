@@ -83,3 +83,28 @@ jobs:
           code=$?
           set -e
           test "$code" -eq 1
+
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Passing case through the composite action
+        uses: ./
+        with:
+          baseline: examples/baseline_metrics.json
+          reference: examples/reference.tum
+          estimate: examples/baseline.tum
+          config: examples/regression.yaml
+      - name: Degraded case through the composite action
+        id: degraded
+        continue-on-error: true
+        uses: ./
+        with:
+          baseline: examples/baseline_metrics.json
+          reference: examples/reference.tum
+          estimate: examples/candidate_degraded.tum
+          config: examples/regression.yaml
+      - name: Assert degraded case failed and report exists
+        run: |
+          test "${{ steps.degraded.outcome }}" = "failure"
+          test -f regression_report.md

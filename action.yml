@@ -1,0 +1,56 @@
+name: "SLAM regression gate"
+description: >
+  Gate SLAM/odometry trajectories against a recorded baseline.
+  Runs slam-regression compare; the step fails on regression (exit code 1)
+  and prints the Markdown report to the job log.
+branding:
+  icon: "activity"
+  color: "green"
+
+inputs:
+  baseline:
+    description: "Baseline metrics JSON produced by 'slam-regression record' (committed to your repo)"
+    required: true
+  reference:
+    description: "Ground-truth trajectory in TUM format"
+    required: true
+  estimate:
+    description: "Candidate estimate trajectory in TUM format"
+    required: true
+  config:
+    description: "Optional threshold config YAML (defaults are used when omitted)"
+    required: false
+    default: ""
+  report:
+    description: "Where to write the Markdown report"
+    required: false
+    default: "regression_report.md"
+  json:
+    description: "Where to write the JSON report"
+    required: false
+    default: "regression_report.json"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install slam-regression-ci
+      shell: bash
+      run: pip install "${{ github.action_path }}"
+    - name: Compare candidate against baseline
+      shell: bash
+      run: |
+        ARGS=(compare --baseline "${{ inputs.baseline }}" --reference "${{ inputs.reference }}" --estimate "${{ inputs.estimate }}")
+        [ -n "${{ inputs.config }}" ] && ARGS+=(--config "${{ inputs.config }}")
+        [ -n "${{ inputs.report }}" ] && ARGS+=(--report "${{ inputs.report }}")
+        [ -n "${{ inputs.json }}" ] && ARGS+=(--json "${{ inputs.json }}")
+        set +e
+        slam-regression "${ARGS[@]}"
+        code=$?
+        set -e
+        if [ -n "${{ inputs.report }}" ] && [ -f "${{ inputs.report }}" ]; then
+          cat "${{ inputs.report }}"
+        fi
+        exit $code
