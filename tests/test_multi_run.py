@@ -137,3 +137,63 @@ class TestMadRule:
             "ate_rmse", 0.10, 0.105, MetricThreshold(max_relative_regression_percent=10.0)
         )
         assert result.passed is True
+
+
+class TestMadOnlyGate:
+    """Audit P0: a MAD-only gate must count as an active gate (no 'no threshold' note)."""
+
+    def _stats(self, values):
+        ordered = sorted(values)
+        n = len(ordered)
+        median = ordered[n // 2] if n % 2 else 0.5 * (ordered[n // 2 - 1] + ordered[n // 2])
+        devs = sorted(abs(v - median) for v in values)
+        mad = devs[n // 2] if n % 2 else 0.5 * (devs[n // 2 - 1] + devs[n // 2])
+        return {"n": n, "median": median, "mad": mad}
+
+    def test_mad_only_pass_has_no_no_threshold_note(self):
+        stats = self._stats([0.100, 0.101, 0.099, 0.100, 0.101])
+        result = compare_metric_distribution(
+            "ate_rmse", stats, 0.101, MetricThreshold(max_mad_multiples=3.0)
+        )
+        assert result.passed is True
+        assert result.note is None  # no "no threshold configured" note
+        assert result.mad_budget == pytest.approx(0.100 + 3 * 0.001)
+        assert result.max_mad_multiples == 3.0
+        payload = result.to_dict()
+        assert payload["mad_budget"] == pytest.approx(0.103)
+        assert payload["max_mad_multiples"] == 3.0
+
+    def test_mad_only_fail_reports_mad_budget(self):
+        stats = self._stats([0.100, 0.101, 0.099, 0.100, 0.101])
+        result = compare_metric_distribution(
+            "ate_rmse", stats, 0.106, MetricThreshold(max_mad_multiples=3.0)
+        )
+        assert result.passed is False
+        assert "MAD" in result.note
+        assert result.mad_budget == pytest.approx(0.103)
+
+    def test_mad_plus_relative_combined(self):
+        stats = self._stats([0.100, 0.101, 0.099, 0.100, 0.101])
+        threshold = MetricThreshold(
+            max_relative_regression_percent=1.0, max_mad_multiples=3.0
+        )
+        # +2% relative: fails relative rule, passes MAD rule.
+        result = compare_metric_distribution("ate_rmse", stats, 0.102, threshold)
+        assert result.passed is False
+        assert "relative change is undefined" not in (result.note or "")
+
+
+class TestNumPairsDistribution:
+    def test_multi_run_compare_reports_pair_distribution(self, multi_env, tmp_path):
+        baseline_json = str(tmp_path / "baseline.json")
+        assert run_record(multi_env["reference"], multi_env["runs"], baseline_json) == 0
+        report_json = str(tmp_path / "report.json")
+        run_compare(
+            baseline_json,
+            multi_env["reference"],
+            multi_env["runs"][:2],
+            extra=["--json", report_json],
+        )
+        payload = json.load(open(report_json))
+        dist = payload["candidate"]["num_pairs_distribution"]
+        assert dist["min"] == dist["median"] == dist["max"] == 30

@@ -180,3 +180,49 @@ class TestSuiteCommand:
         code = main(["suite", "--config", suite])
         assert code == 2
         assert "sequence 'seq-bad'" in capsys.readouterr().err
+
+
+class TestSuiteRelativePaths:
+    """Audit P0: relative paths in a suite resolve against the suite file."""
+
+    def test_relative_paths_resolve_from_suite_directory(self, suite_env, tmp_path, capsys):
+        from slam_regression.cli import main
+
+        subdir = tmp_path / "benchmarks"
+        subdir.mkdir()
+        # Suite lives in benchmarks/, data paths written relative to it.
+        good_rel = "runs/good.tum"
+        degraded_rel = "runs/degraded.tum"
+        reference_name = "reference.tum"
+        baseline_name = "baseline.json"
+        (subdir / "runs").mkdir()
+        (subdir / reference_name).write_text(open(suite_env["reference"]).read())
+        (subdir / good_rel).write_text(open(suite_env["good"]).read())
+        (subdir / degraded_rel).write_text(open(suite_env["degraded"]).read())
+        (subdir / baseline_name).write_text(open(suite_env["baseline_json"]).read())
+
+        suite = subdir / "suite.yaml"
+        suite.write_text(
+            "sequences:\n"
+            "  - name: seq-good\n"
+            f"    baseline: {baseline_name}\n"
+            f"    reference: {reference_name}\n"
+            f"    estimate: {good_rel}\n"
+            "  - name: seq-bad\n"
+            f"    baseline: {baseline_name}\n"
+            f"    reference: {reference_name}\n"
+            f"    estimate: {degraded_rel}\n"
+        )
+        # Run from a DIFFERENT working directory: paths must still resolve
+        # relative to the suite file, not the CWD.
+        import os
+
+        cwd = os.getcwd()
+        os.chdir(tmp_path.parent)
+        try:
+            code = main(["suite", "--config", str(suite)])
+        finally:
+            os.chdir(cwd)
+        assert code == 1  # seq-bad fails, seq-good passes
+        out = capsys.readouterr().out
+        assert "seq-good" in out

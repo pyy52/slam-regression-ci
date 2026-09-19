@@ -401,7 +401,15 @@ def _run_comparison(
     if multi_candidate:
         candidate_stats = {key: _metric_stats(values) for key, values in metric_runs.items()}
         candidate_values = {key: stats["median"] for key, stats in candidate_stats.items()}
-        candidate_metrics = per_run[len(estimates) // 2][0]  # representative run for num_pairs
+        pair_counts = sorted(metrics["num_pairs"] for metrics, _ in per_run)
+        candidate_metrics = {
+            "num_pairs": pair_counts[len(pair_counts) // 2],
+            "num_pairs_distribution": {
+                "min": pair_counts[0],
+                "median": pair_counts[len(pair_counts) // 2],
+                "max": pair_counts[-1],
+            },
+        }
         coverage_infos = [coverage for _, coverage in per_run]
     else:
         candidate_metrics = per_run[0][0]
@@ -471,6 +479,7 @@ def _command_compare(args: argparse.Namespace) -> int:
         "candidate": {
             "metrics": candidate_values,
             "num_pairs": candidate_metrics["num_pairs"],
+            "num_pairs_distribution": candidate_metrics.get("num_pairs_distribution"),
             "runs": candidate_stats,
             "count": len(estimates),
         },
@@ -499,10 +508,13 @@ def _command_suite(args: argparse.Namespace) -> int:
     suite = load_suite_config(args.config)
     entries = []
     for spec in suite.sequences:
-        config = load_config(spec.config)
+        config = load_config(suite.resolve(spec.config) if spec.config else None)
         try:
             (_, _, _, _, _, result) = _run_comparison(
-                spec.baseline, spec.reference, spec.estimates, config
+                suite.resolve(spec.baseline),
+                suite.resolve(spec.reference),
+                [suite.resolve(estimate) for estimate in spec.estimates],
+                config,
             )
         except SlamRegressionError as exc:
             print(f"error: sequence '{spec.name}': {exc}", file=sys.stderr)
